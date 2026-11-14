@@ -10,6 +10,7 @@
 //! :TRIGger:EDGE:SOURce|LEVel|SLOPe, :TRIGger:PULSe:SOURce|POLarity|WHEN|UWIDth|LWIDth|LEVel,
 //! :TRIGger:SLOPe:SOURce|POLarity|WHEN|TUPPer|TLOWer|WINDow|ALEVel|BLEVel,
 //! :TRIGger:VIDeo:SOURce|POLarity|MODE|LINE|STANdard|LEVel,
+//! :TRIGger:PATTern:PATTern|SOURce|LEVel, :TRIGger:DURation:TYPE|SOURce|WHEN|TUPPer|TLOWer|LEVel,
 //! :TRIGger:SWEep, :TRIGger:HOLDoff, :TRIGger:STATus?,
 //! :ACQuire:SRATe?|MDEPth[?] (AUTO, 1k..125M)|TYPE NORM/PEAK/AVER/HRES|AVERages|ULTRa:MAXFrame,
 //! :MEASure:ITEM[?] <item>[,CHANn|Rn[,src]] (the set form adds a readout row), :MEASure:SOURce, :MEASure:CLEar, :MEASure:INDicator,
@@ -313,6 +314,53 @@ fn parse_ch(s: &str) -> Option<usize> {
     } else {
         None
     }
+}
+
+/// One letter per analog channel. An edge is rise or fall, and only the first edge is kept.
+fn pattern_bits(arg: &str, edges: bool) -> Option<[Bit; NCH]> {
+    let parts: Vec<&str> = arg.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+    if parts.len() != NCH {
+        return None;
+    }
+    let mut bits = [Bit::X; NCH];
+    let mut edge = false;
+    for (i, p) in parts.iter().enumerate() {
+        let b = if p.eq_ignore_ascii_case("H") {
+            Bit::H
+        } else if p.eq_ignore_ascii_case("L") {
+            Bit::L
+        } else if p.eq_ignore_ascii_case("X") {
+            Bit::X
+        } else if edges && p.eq_ignore_ascii_case("R") {
+            Bit::R
+        } else if edges && p.eq_ignore_ascii_case("F") {
+            Bit::F
+        } else {
+            return None;
+        };
+        if matches!(b, Bit::R | Bit::F) && edge {
+            bits[i] = Bit::X;
+        } else {
+            if matches!(b, Bit::R | Bit::F) {
+                edge = true;
+            }
+            bits[i] = b;
+        }
+    }
+    Some(bits)
+}
+
+fn pattern_text(bits: &[Bit; NCH], edges: bool) -> String {
+    bits.iter()
+        .map(|b| match b {
+            Bit::H => "H",
+            Bit::L => "L",
+            Bit::R if edges => "R",
+            Bit::F if edges => "F",
+            _ => "X",
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// The line knob stops at half the standard's lines, ten short of the last one.
@@ -1228,6 +1276,12 @@ impl Scpi {
         }
         if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "VIDeo") {
             return self.trigger_video(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "PATTern") {
+            return self.trigger_pattern(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "DURation") {
+            return self.trigger_duration(ui, nodes[2], query, arg);
         }
         let (channel, channel_n) = suffix(n0);
         if kw(channel, "CHANnel") && nodes.len() == 2 && kw(nodes[1], "ZERO") && !query {
@@ -2267,7 +2321,137 @@ impl Scpi {
         None
     }
 
-    /// Upper (`upper`) or lower time limit for a pulse or a slope. Greater uses the lower limit. Less uses the upper limit. Inside and outside use both.
+    /// H, L, X, rise, or fall on each analog channel. A second edge becomes X, which is the edge the trigger keeps.
+    fn trigger_pattern(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "PATTern") {
+            if query {
+                return t(&pattern_text(&ui.m.pat, true));
+            }
+            let Some(bits) = pattern_bits(arg, true) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Pattern;
+            ui.m.pat = bits;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "SOURce") {
+            return self.trigger_line(ui, TrigType::Pattern, query, arg);
+        }
+        if kw(which, "LEVel") {
+            return self.pattern_level(ui, TrigType::Pattern, query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:PATTern:{}", which));
+        None
+    }
+
+    /// The same channel bits without an edge, plus the time the pattern must last.
+    fn trigger_duration(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "TYPE") {
+            if query {
+                return t(&pattern_text(&ui.m.pat, false));
+            }
+            let Some(bits) = pattern_bits(arg, false) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Duration;
+            ui.m.pat = bits;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "SOURce") {
+            return self.trigger_line(ui, TrigType::Duration, query, arg);
+        }
+        if kw(which, "LEVel") {
+            return self.pattern_level(ui, TrigType::Duration, query, arg);
+        }
+        if kw(which, "WHEN") {
+            if query {
+                return t(match ui.m.trig_when {
+                    WhenKind::Gt => "GRE",
+                    WhenKind::Lt => "LESS",
+                    WhenKind::In => "GLES",
+                    WhenKind::Out | WhenKind::Off => "UNGL",
+                });
+            }
+            let w = if kw(arg, "GREater") {
+                WhenKind::Gt
+            } else if kw(arg, "LESS") {
+                WhenKind::Lt
+            } else if kw(arg, "GLESs") {
+                WhenKind::In
+            } else if kw(arg, "UNGLess") || kw(arg, "OUTSide") {
+                WhenKind::Out
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Duration;
+            ui.m.trig_when = w;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "TUPPer") {
+            return self.when_width(ui, true, query, arg, TrigType::Duration);
+        }
+        if kw(which, "TLOWer") {
+            return self.when_width(ui, false, query, arg, TrigType::Duration);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:DURation:{}", which));
+        None
+    }
+
+    /// The level source: an analog channel, or a logic line while the logic analyser is on.
+    fn trigger_line(&mut self, ui: &mut Ui, kind: TrigType, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if query {
+            return t(&ui.m.trig_line().map_or(format!("CHAN{}", ui.m.trig_src + 1), |n| format!("D{}", n)));
+        }
+        let digital = arg.trim().to_ascii_uppercase().strip_prefix('D').and_then(|n| n.parse::<u8>().ok()).filter(|&n| n < 16 && ui.m.trig_la_ok());
+        if let Some(n) = digital {
+            ui.m.trig_type = kind;
+            ui.m.trig_la = Some(n);
+            ui.mark_changed();
+            return None;
+        }
+        let Some(c) = parse_ch(arg) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = kind;
+        ui.m.ch[c].on = true;
+        ui.m.trig_src = c;
+        ui.m.trig_la = None;
+        ui.mark_changed();
+        None
+    }
+
+    /// One threshold per analog channel. The source names which channel.
+    fn pattern_level(&mut self, ui: &mut Ui, kind: TrigType, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let mut parts = arg.split(',').map(str::trim).filter(|s| !s.is_empty());
+        let Some(c) = parts.next().and_then(parse_ch) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        if query {
+            return t(&e(ui.m.pat_levels[c] as f64));
+        }
+        let Some(v) = parts.next().and_then(num) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = kind;
+        ui.m.pat_levels[c] = v;
+        ui.mark_changed();
+        None
+    }
+
+    /// Upper (`upper`) or lower time limit for a pulse, a slope, or a duration. Greater uses the lower limit. Less uses the upper limit. Inside and outside use both. The single limit is the screen's Time.
     fn when_width(&mut self, ui: &mut Ui, upper: bool, query: bool, arg: &str, kind: TrigType) -> Option<Vec<u8>> {
         let t = |s: &str| Some(s.as_bytes().to_vec());
         let uses = match ui.m.trig_when {
@@ -4690,7 +4874,28 @@ mod tests {
         line(&mut s, &mut ui, &cv, ":TRIG:VID:MODE ODDF;:TRIG:VID:POL NEG;:TRIG:VID:STAN 720P60");
         let err = line(&mut s, &mut ui, &cv, ":SYST:ERR?");
         assert!(err.starts_with("-224"), "{err}");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"), "720p is not a standard on this screen");
         assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:VID:MODE?;:TRIG:VID:STAN?;:TRIG:VID:POL?"), "ODDF;NTSC;POS");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE PATT");
+        let fresh: Vec<&str> = (0..NCH).map(|i| if i == 0 { "H" } else if i + 1 == NCH { "R" } else { "X" }).collect();
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?;:TRIG:PATT:PATT?;:TRIG:PATT:SOUR?"), format!("PATT;{};CHAN1", fresh.join(",")));
+        line(&mut s, &mut ui, &cv, ":TRIG:PATT:PATT H,R,L,F");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:PATT:PATT?"), "H,R,L,X");
+        line(&mut s, &mut ui, &cv, ":TRIG:PATT:SOUR CHAN3;:TRIG:PATT:LEV CHAN2,0.16");
+        let level: f64 = line(&mut s, &mut ui, &cv, ":TRIG:PATT:LEV? CHAN2").parse().unwrap();
+        assert!((level - 0.16).abs() < 1e-6, "{level}");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:PATT:SOUR?"), "CHAN3");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE DUR");
+        let held: Vec<&str> = (0..NCH).map(|i| if i == 0 { "H" } else { "X" }).collect();
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:DUR:TYPE?;:TRIG:DUR:WHEN?"), format!("{};GRE", held.join(",")));
+        line(&mut s, &mut ui, &cv, ":TRIG:DUR:TUPP 1e-6");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "greater uses the lower time");
+        let lower: f64 = line(&mut s, &mut ui, &cv, ":TRIG:DUR:TLOW?").parse().unwrap();
+        assert!((lower - 200e-6).abs() < 1e-12, "{lower}");
+        line(&mut s, &mut ui, &cv, ":TRIG:DUR:TYPE L,X,H,L;:TRIG:DUR:WHEN GLES;:TRIG:DUR:TLOW 2e-6;:TRIG:DUR:TUPP 8e-6");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:DUR:TYPE?;:TRIG:DUR:WHEN?"), "L,X,H,L;GLES");
+        line(&mut s, &mut ui, &cv, ":TRIG:DUR:TYPE H,R,X,X");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
         line(&mut s, &mut ui, &cv, ":TRIG:MODE EDGE");
         assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?"), "EDGE");
     }
