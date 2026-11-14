@@ -2914,8 +2914,8 @@ impl Ui {
         self.math_wave_of(self.m.math_sel)
     }
 
-    /// Picks the math scale so that the waveform spans about 6 divisions.
-    fn math_autoscale(&mut self) {
+    /// Picks the math scale so that the waveform spans about 6 divisions. The Auto scale button and `:MATH<n>:RESet`.
+    pub(crate) fn math_autoscale(&mut self) {
         if self.m.math == MathOp::Fft {
             self.m.math_scale = 3;
             self.m.math_offset = 0.0;

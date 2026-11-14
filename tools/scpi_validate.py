@@ -413,6 +413,13 @@ def validate(oos, result):
     frames = int(oos.query(":RECord:WREPlay:FMAX?"))
     current = int(oos.query(":RECord:CURRent?"))
     result.equal("history frame", str(current == 0 if frames == 0 else 1 <= current <= frames), "True")
+    oos.write(":MATH1:FFT:SOURce CHANnel1")
+    oos.write(":MATH1:FFT:SCALe 1")
+    oos.write(":MATH1:OFFSet 4")
+    oos.write(":MATH1:RESet")
+    result.numeric("math autoscale", float(oos.query(":MATH1:SCALe?")), 10, relative=1e-6)
+    result.numeric("math offset after autoscale", float(oos.query(":MATH1:OFFSet?")), 0, absolute=1e-6)
+    oos.write(":MATH1:DISPlay OFF")
     lane = oos.query(":LA:SIZE?")
     if not lane.startswith("-241"):
         result.equal("lane height", str(lane in ("SMAL", "MED", "LARG")), "True")

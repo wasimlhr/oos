@@ -28,7 +28,7 @@
 //! :DVM:ENABle|SOURce|MODE|CURRent?, :COUNter:ENABle|SOURce|MODE|NDIGits|CURRent?,
 //! :MASK:ENABle|SOURce|X|Y|CREate|RESet|OPERate|FAILed?|PASSed?|TOTal?,
 //! :HISTogram:ENABle|TYPE|SOURce, :HISTogram:STATistics:RESult?,
-//! :MATH<n>:DISPlay|OPERator|SOURce1|SOURce2|SCALe|OFFSet|EXPRession, :MATH<n>:FFT:SOURce|WINDow|SCALe, :MATH<n>:FILTer:TYPE|W1|W2,
+//! :MATH<n>:DISPlay|OPERator|SOURce1|SOURce2|SCALe|OFFSet|EXPRession|RESet, :MATH<n>:FFT:SOURce|WINDow|SCALe, :MATH<n>:FILTer:TYPE|W1|W2,
 //! :BUS<n>:MODE|DISPlay|FORMat|EVENt|THReshold|DATA?, :BUS<n>:RS232:TX|RX|BAUD|PARity|DBITs, :BUS<n>:IIC:SCLK:SOURce|SDA:SOURce, :BUS<n>:SPI:SCLK:SOURce|MOSI:SOURce|SS:SOURce|DBITs,
 //! :POWer:ITEM? <item>[,src...], :POWer:HARMonics? [src], :SPECtrum:ITEM? <item>[,src], :BODE:MODE LOOP|PSRR|IMPedance,
 //! :MAGnetic:ITEM? <item>[,V,I], :INVerter:ITEM? <item>[,src...], :DPT:ITEM? <item>[,V,I[,G]], :BANDwidth:ITEM? <item>[,src],
@@ -4463,6 +4463,26 @@ impl Scpi {
             put_math(ui, k, c);
             return None;
         }
+        if n.len() == 1 && kw(n0, "RESet") {
+            if query {
+                self.push_err(format!("-113,\"Undefined header\" :MATH{}:RESet?", k + 1));
+                return None;
+            }
+            if ui.m.math_ch(k).op == MathOp::Off {
+                self.push_err("-221,\"Settings conflict\" math is off".into());
+                return None;
+            }
+            let prev = ui.m.math_sel;
+            if prev != k {
+                ui.m.math_select(k);
+            }
+            ui.math_autoscale();
+            if prev != k {
+                ui.m.math_select(prev);
+            }
+            ui.mark_changed();
+            return None;
+        }
         self.push_err(format!("-113,\"Undefined header\" :MATH{}:{}", k + 1, n.join(":")));
         None
     }
@@ -6485,6 +6505,26 @@ mod tests {
         assert_eq!(line(&mut s, &mut ui, &cv, ":MATH1:EXPR?;:MATH1:OPER?"), "2*CH1-CH2;EXPR");
         line(&mut s, &mut ui, &cv, ":MATH1:DISP OFF");
         assert_eq!(line(&mut s, &mut ui, &cv, ":MATH1:DISP?;:MATH1:OPER?"), "0;OFF");
+    }
+
+    #[test]
+    fn math_reset_autoscales_the_shown_trace() {
+        let (mut s, mut ui, cv) = session();
+        line(&mut s, &mut ui, &cv, ":MATH1:RES");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"));
+        assert!(line(&mut s, &mut ui, &cv, ":MATH1:RES?").starts_with("-113"));
+        ui.step(0.2);
+        line(&mut s, &mut ui, &cv, ":MATH1:OPER ABS;:MATH1:SOUR1 CHAN1;:MATH1:SCAL 50;:MATH1:OFFS 10");
+        line(&mut s, &mut ui, &cv, ":MATH1:RES");
+        let scale: f64 = line(&mut s, &mut ui, &cv, ":MATH1:SCAL?").parse().unwrap();
+        let offset: f64 = line(&mut s, &mut ui, &cv, ":MATH1:OFFS?").parse().unwrap();
+        assert!(scale < 50.0 && offset.abs() < 5.0, "{scale} {offset}");
+        line(&mut s, &mut ui, &cv, ":MATH2:FFT:SOUR CHAN1;:MATH2:FFT:SCAL 1;:MATH2:OFFS 4");
+        line(&mut s, &mut ui, &cv, ":MATH2:RES");
+        let db: f64 = line(&mut s, &mut ui, &cv, ":MATH2:SCAL?").parse().unwrap();
+        let off: f64 = line(&mut s, &mut ui, &cv, ":MATH2:OFFS?").parse().unwrap();
+        let kept: f64 = line(&mut s, &mut ui, &cv, ":MATH1:SCAL?").parse().unwrap();
+        assert!((db - 10.0).abs() < 1e-6 && off.abs() < 1e-6 && (kept - scale).abs() < 1e-9, "{db} {off} {kept}");
     }
 
     #[test]
