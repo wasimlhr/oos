@@ -11,6 +11,9 @@
 //! :TRIGger:SLOPe:SOURce|POLarity|WHEN|TUPPer|TLOWer|WINDow|ALEVel|BLEVel,
 //! :TRIGger:VIDeo:SOURce|POLarity|MODE|LINE|STANdard|LEVel,
 //! :TRIGger:PATTern:PATTern|SOURce|LEVel, :TRIGger:DURation:TYPE|SOURce|WHEN|TUPPer|TLOWer|LEVel,
+//! :TRIGger:TIMeout:SOURce|SLOPe|TIME|LEVel, :TRIGger:RUNT:SOURce|POLarity|WHEN|WUPPer|WLOWer|ALEVel|BLEVel,
+//! :TRIGger:WINDows:SOURce|SLOPe|POSition|TIME|WHEN|ALEVel|BLEVel, :TRIGger:DELay:SA|ASLop|SB|BSLop|TYPE|TUPPer|TLOWer|ALEVel|BLEVel,
+//! :TRIGger:SHOLd:DSRC|CSRC|SLOPe|TYPE|STIMe|HTIMe|DLEVel|CLEVel, :TRIGger:NEDGe:SOURce|SLOPe|IDLE|EDGE|LEVel,
 //! :TRIGger:SWEep, :TRIGger:HOLDoff, :TRIGger:STATus?,
 //! :ACQuire:SRATe?|MDEPth[?] (AUTO, 1k..125M)|TYPE NORM/PEAK/AVER/HRES|AVERages|ULTRa:MAXFrame,
 //! :MEASure:ITEM[?] <item>[,CHANn|Rn[,src]] (the set form adds a readout row), :MEASure:SOURce, :MEASure:CLEar, :MEASure:INDicator,
@@ -311,6 +314,34 @@ fn parse_ch(s: &str) -> Option<usize> {
     let (k, n) = suffix(s.trim());
     if kw(k, "CHANnel") {
         n.filter(|&n| (1..=NCH).contains(&n)).map(|n| n - 1)
+    } else {
+        None
+    }
+}
+
+/// Which time a trigger command writes.
+enum TimeSlot {
+    Limit,
+    Setup,
+    Hold,
+    Idle,
+}
+
+fn slope_token(s: Slope) -> &'static str {
+    match s {
+        Slope::Rise => "POS",
+        Slope::Fall => "NEG",
+        Slope::Either => "RFAL",
+    }
+}
+
+fn parse_slope(arg: &str, allow_either: bool) -> Option<Slope> {
+    if kw(arg, "POSitive") {
+        Some(Slope::Rise)
+    } else if kw(arg, "NEGative") {
+        Some(Slope::Fall)
+    } else if allow_either && kw(arg, "RFALl") {
+        Some(Slope::Either)
     } else {
         None
     }
@@ -1282,6 +1313,24 @@ impl Scpi {
         }
         if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "DURation") {
             return self.trigger_duration(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "TIMeout") {
+            return self.trigger_timeout(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "RUNT") {
+            return self.trigger_runt(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && (kw(nodes[1], "WINDows") || kw(nodes[1], "WINDow")) {
+            return self.trigger_window(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "DELay") {
+            return self.trigger_delay(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && (kw(nodes[1], "SHOLd") || kw(nodes[1], "SETup")) {
+            return self.trigger_setup(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "NEDGe") {
+            return self.trigger_nth(ui, nodes[2], query, arg);
         }
         let (channel, channel_n) = suffix(n0);
         if kw(channel, "CHANnel") && nodes.len() == 2 && kw(nodes[1], "ZERO") && !query {
@@ -2451,7 +2500,405 @@ impl Scpi {
         None
     }
 
-    /// Upper (`upper`) or lower time limit for a pulse, a slope, or a duration. Greater uses the lower limit. Less uses the upper limit. Inside and outside use both. The single limit is the screen's Time.
+    /// A quiet stretch longer than the timeout, on one edge or on either edge.
+    fn trigger_timeout(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        if kw(which, "SOURce") {
+            return self.trigger_line(ui, TrigType::Timeout, query, arg);
+        }
+        if kw(which, "SLOPe") {
+            return self.edge_slope(ui, TrigType::Timeout, false, true, query, arg);
+        }
+        if kw(which, "TIME") {
+            return self.positive_time(ui, TrigType::Timeout, query, arg, TimeSlot::Limit);
+        }
+        if kw(which, "LEVel") {
+            return self.pair_level(ui, TrigType::Timeout, true, query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:TIMeout:{}", which));
+        None
+    }
+
+    /// A pulse that crosses one level and turns back before the other. None means any width.
+    fn trigger_runt(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "SOURce") {
+            return self.trigger_line(ui, TrigType::Runt, query, arg);
+        }
+        if kw(which, "POLarity") {
+            return self.pulse_polarity(ui, TrigType::Runt, query, arg);
+        }
+        if kw(which, "WHEN") {
+            if query {
+                return t(match ui.m.trig_when {
+                    WhenKind::Off => "NONE",
+                    WhenKind::Gt => "GRE",
+                    WhenKind::Lt => "LESS",
+                    WhenKind::In => "GLES",
+                    WhenKind::Out => "OUT",
+                });
+            }
+            let w = if kw(arg, "NONE") {
+                WhenKind::Off
+            } else if kw(arg, "GREater") {
+                WhenKind::Gt
+            } else if kw(arg, "LESS") {
+                WhenKind::Lt
+            } else if kw(arg, "GLESs") {
+                WhenKind::In
+            } else if kw(arg, "OUTSide") {
+                WhenKind::Out
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Runt;
+            ui.m.trig_when = w;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "WUPPer") {
+            return self.when_width(ui, true, query, arg, TrigType::Runt);
+        }
+        if kw(which, "WLOWer") {
+            return self.when_width(ui, false, query, arg, TrigType::Runt);
+        }
+        if kw(which, "ALEVel") {
+            return self.pair_level(ui, TrigType::Runt, true, query, arg);
+        }
+        if kw(which, "BLEVel") {
+            return self.pair_level(ui, TrigType::Runt, false, query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:RUNT:{}", which));
+        None
+    }
+
+    /// Enter, exit, or time spent inside the two levels. The edge is always either, which is how the window is drawn.
+    fn trigger_window(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "SOURce") {
+            return self.trigger_line(ui, TrigType::Window, query, arg);
+        }
+        if kw(which, "SLOPe") {
+            if query {
+                return t("RFAL");
+            }
+            if kw(arg, "RFALl") {
+                ui.m.trig_type = TrigType::Window;
+                ui.mark_changed();
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" window edge is fixed".into());
+            return None;
+        }
+        if kw(which, "POSition") {
+            if query {
+                return t(match ui.m.win_mode {
+                    WinMode::Enter => "ENT",
+                    WinMode::Exit => "EXIT",
+                    WinMode::Inside => "TIME",
+                });
+            }
+            let mode = if kw(arg, "ENTer") {
+                Some(WinMode::Enter)
+            } else if kw(arg, "EXIT") {
+                Some(WinMode::Exit)
+            } else if kw(arg, "TIME") {
+                Some(WinMode::Inside)
+            } else {
+                None
+            };
+            let Some(mode) = mode else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Window;
+            ui.m.win_mode = mode;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "TIME") || kw(which, "WHEN") {
+            if ui.m.win_mode != WinMode::Inside {
+                self.push_err("-221,\"Settings conflict\"".into());
+                return if query { t("9.9E37") } else { None };
+            }
+        }
+        if kw(which, "TIME") {
+            return self.positive_time(ui, TrigType::Window, query, arg, TimeSlot::Limit);
+        }
+        if kw(which, "WHEN") {
+            if query {
+                return t(match ui.m.trig_when {
+                    WhenKind::Gt | WhenKind::Off => "GRE",
+                    WhenKind::Lt => "LESS",
+                    WhenKind::In => "GLES",
+                    WhenKind::Out => "OUT",
+                });
+            }
+            let w = if kw(arg, "GREater") {
+                WhenKind::Gt
+            } else if kw(arg, "LESS") {
+                WhenKind::Lt
+            } else if kw(arg, "GLESs") {
+                WhenKind::In
+            } else if kw(arg, "OUTSide") {
+                WhenKind::Out
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Window;
+            ui.m.trig_when = w;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "ALEVel") {
+            return self.pair_level(ui, TrigType::Window, true, query, arg);
+        }
+        if kw(which, "BLEVel") {
+            return self.pair_level(ui, TrigType::Window, false, query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:WINDows:{}", which));
+        None
+    }
+
+    /// Source A, then source B, and how long may pass between those edges.
+    fn trigger_delay(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "SA") {
+            return self.trigger_line(ui, TrigType::Delay, query, arg);
+        }
+        if kw(which, "SB") {
+            return self.source_b(ui, TrigType::Delay, query, arg);
+        }
+        if kw(which, "ASLop") {
+            return self.edge_slope(ui, TrigType::Delay, false, true, query, arg);
+        }
+        if kw(which, "BSLop") {
+            return self.edge_slope(ui, TrigType::Delay, true, true, query, arg);
+        }
+        if kw(which, "TYPE") {
+            if query {
+                return t(match ui.m.trig_when {
+                    WhenKind::Gt | WhenKind::Off => "GRE",
+                    WhenKind::Lt => "LESS",
+                    WhenKind::In => "GLES",
+                    WhenKind::Out => "GOUT",
+                });
+            }
+            let w = if kw(arg, "GREater") {
+                WhenKind::Gt
+            } else if kw(arg, "LESS") {
+                WhenKind::Lt
+            } else if kw(arg, "GLESs") {
+                WhenKind::In
+            } else if kw(arg, "GOUT") || kw(arg, "OUTSide") {
+                WhenKind::Out
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Delay;
+            ui.m.trig_when = w;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "TUPPer") {
+            return self.when_width(ui, true, query, arg, TrigType::Delay);
+        }
+        if kw(which, "TLOWer") {
+            return self.when_width(ui, false, query, arg, TrigType::Delay);
+        }
+        if kw(which, "ALEVel") {
+            return self.pair_level(ui, TrigType::Delay, true, query, arg);
+        }
+        if kw(which, "BLEVel") {
+            return self.pair_level(ui, TrigType::Delay, false, query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:DELay:{}", which));
+        None
+    }
+
+    /// Data and clock. Both the setup time and the hold time stay active.
+    fn trigger_setup(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "DSRC") {
+            return self.trigger_line(ui, TrigType::SetupHold, query, arg);
+        }
+        if kw(which, "CSRC") {
+            return self.source_b(ui, TrigType::SetupHold, query, arg);
+        }
+        if kw(which, "SLOPe") {
+            return self.edge_slope(ui, TrigType::SetupHold, true, true, query, arg);
+        }
+        if kw(which, "TYPE") {
+            if query {
+                return t("SETH");
+            }
+            if kw(arg, "SETHold") {
+                ui.m.trig_type = TrigType::SetupHold;
+                ui.mark_changed();
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" setup and hold are both active".into());
+            return None;
+        }
+        if kw(which, "STIMe") {
+            return self.positive_time(ui, TrigType::SetupHold, query, arg, TimeSlot::Setup);
+        }
+        if kw(which, "HTIMe") {
+            return self.positive_time(ui, TrigType::SetupHold, query, arg, TimeSlot::Hold);
+        }
+        if kw(which, "DLEVel") {
+            return self.pair_level(ui, TrigType::SetupHold, true, query, arg);
+        }
+        if kw(which, "CLEVel") {
+            return self.pair_level(ui, TrigType::SetupHold, false, query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:SHOLd:{}", which));
+        None
+    }
+
+    /// The edge count after a quiet stretch.
+    fn trigger_nth(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "SOURce") {
+            return self.trigger_line(ui, TrigType::NthEdge, query, arg);
+        }
+        if kw(which, "SLOPe") {
+            return self.edge_slope(ui, TrigType::NthEdge, false, true, query, arg);
+        }
+        if kw(which, "IDLE") {
+            return self.positive_time(ui, TrigType::NthEdge, query, arg, TimeSlot::Idle);
+        }
+        if kw(which, "EDGE") {
+            if query {
+                return t(&ui.m.nth_n.to_string());
+            }
+            let Some(n) = arg.trim().parse::<u32>().ok().filter(|&n| (1..=65535).contains(&n)) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::NthEdge;
+            ui.m.nth_n = n;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "LEVel") {
+            return self.pair_level(ui, TrigType::NthEdge, true, query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:NEDGe:{}", which));
+        None
+    }
+
+    /// Rising, falling, or either edge. `second` is source B or the clock.
+    fn edge_slope(&mut self, ui: &mut Ui, kind: TrigType, second: bool, allow_either: bool, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let cur = if second { ui.m.trig_slope2 } else { ui.m.slope };
+        if query {
+            return t(slope_token(cur));
+        }
+        let Some(s) = parse_slope(arg, allow_either) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = kind;
+        if second {
+            ui.m.trig_slope2 = s;
+        } else {
+            ui.m.slope = s;
+        }
+        ui.mark_changed();
+        None
+    }
+
+    fn pulse_polarity(&mut self, ui: &mut Ui, kind: TrigType, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if query {
+            return t(if ui.m.trig_pol == Pol::Pos { "POS" } else { "NEG" });
+        }
+        let pol = if kw(arg, "POSitive") {
+            Some(Pol::Pos)
+        } else if kw(arg, "NEGative") {
+            Some(Pol::Neg)
+        } else {
+            None
+        };
+        let Some(pol) = pol else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = kind;
+        ui.m.trig_pol = pol;
+        ui.mark_changed();
+        None
+    }
+
+    /// Upper is the screen's first level. Lower is the second level.
+    fn pair_level(&mut self, ui: &mut Ui, kind: TrigType, upper: bool, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let cur = if upper { ui.m.trig_level } else { ui.m.trig_level2 };
+        if query {
+            return t(&e(cur as f64));
+        }
+        let Some(v) = num(arg) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = kind;
+        if upper {
+            ui.m.trig_level = v;
+        } else {
+            ui.m.trig_level2 = v;
+        }
+        ui.mark_changed();
+        None
+    }
+
+    /// A time the screen stores in seconds.
+    fn positive_time(&mut self, ui: &mut Ui, kind: TrigType, query: bool, arg: &str, slot: TimeSlot) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let cur = match slot {
+            TimeSlot::Limit => ui.m.trig_t1,
+            TimeSlot::Setup => ui.m.setup,
+            TimeSlot::Hold => ui.m.hold,
+            TimeSlot::Idle => ui.m.nth_idle,
+        };
+        if query {
+            return t(&e(cur as f64));
+        }
+        let Some(v) = num(arg).filter(|&v| v > 0.0) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = kind;
+        match slot {
+            TimeSlot::Limit => ui.m.trig_t1 = v,
+            TimeSlot::Setup => ui.m.setup = v,
+            TimeSlot::Hold => ui.m.hold = v,
+            TimeSlot::Idle => ui.m.nth_idle = v,
+        }
+        ui.mark_changed();
+        None
+    }
+
+    /// Source B or the clock. Analog channels only, which is the source knob.
+    fn source_b(&mut self, ui: &mut Ui, kind: TrigType, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if query {
+            return t(&format!("CHAN{}", ui.m.trig_src2 + 1));
+        }
+        let Some(c) = parse_ch(arg) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = kind;
+        ui.m.ch[c].on = true;
+        ui.m.trig_src2 = c;
+        ui.mark_changed();
+        None
+    }
+
+    /// Upper (`upper`) or lower time limit for a pulse, a slope, a duration, a runt, or a delay. Greater uses the lower limit. Less uses the upper limit. Inside and outside use both. The single limit is the screen's Time.
     fn when_width(&mut self, ui: &mut Ui, upper: bool, query: bool, arg: &str, kind: TrigType) -> Option<Vec<u8>> {
         let t = |s: &str| Some(s.as_bytes().to_vec());
         let uses = match ui.m.trig_when {
@@ -4896,6 +5343,69 @@ mod tests {
         assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:DUR:TYPE?;:TRIG:DUR:WHEN?"), "L,X,H,L;GLES");
         line(&mut s, &mut ui, &cv, ":TRIG:DUR:TYPE H,R,X,X");
         assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE EDGE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?"), "EDGE");
+    }
+
+    #[test]
+    fn timeout_runt_window_delay_setup_and_nth_edge_follow_the_screen() {
+        let (mut s, mut ui, cv) = session();
+        let near = |got: f64, want: f64| (got - want).abs() < 1e-6;
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE TIM");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?;:TRIG:TIM:SOUR?;:TRIG:TIM:SLOP?"), "TIM;CHAN1;POS");
+        let (time, level): (f64, f64) = {
+            let r = line(&mut s, &mut ui, &cv, ":TRIG:TIM:TIME?;:TRIG:TIM:LEV?");
+            let mut p = r.split(';');
+            (p.next().unwrap().parse().unwrap(), p.next().unwrap().parse().unwrap())
+        };
+        assert!(near(time, 1.2e-3) && near(level, 1.5), "{time} {level}");
+        line(&mut s, &mut ui, &cv, ":TRIG:TIM:SLOP RFAL;:TRIG:TIM:TIME 0.002");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:TIM:SLOP?"), "RFAL");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE RUNT");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:RUNT:POL?;:TRIG:RUNT:WHEN?"), "POS;NONE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:RUNT:WUPP?"), "9.9E37");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "none uses no width");
+        line(&mut s, &mut ui, &cv, ":TRIG:RUNT:WHEN LESS;:TRIG:RUNT:WUPP 0.02");
+        let width: f64 = line(&mut s, &mut ui, &cv, ":TRIG:RUNT:WUPP?").parse().unwrap();
+        assert!(near(width, 0.02), "{width}");
+        let levels = line(&mut s, &mut ui, &cv, ":TRIG:RUNT:ALEV?;:TRIG:RUNT:BLEV?");
+        let mut levels = levels.split(';');
+        let (hi, lo): (f64, f64) = (levels.next().unwrap().parse().unwrap(), levels.next().unwrap().parse().unwrap());
+        assert!(near(hi, 2.0) && near(lo, 0.5), "{hi} {lo}");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE WIND");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?;:TRIG:WINDOWS:SOUR?;:TRIG:WINDOW:POS?;:TRIG:WIND:SLOP?"), "WIND;CHAN2;ENT;RFAL");
+        line(&mut s, &mut ui, &cv, ":TRIG:WIND:SLOP NEG");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:WIND:TIME?"), "9.9E37");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "enter has no time");
+        line(&mut s, &mut ui, &cv, ":TRIG:WIND:POS TIME;:TRIG:WIND:TIME 0.002;:TRIG:WIND:WHEN GRE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:WIND:POS?;:TRIG:WIND:WHEN?"), "TIME;GRE");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE DEL");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:DEL:SA?;:TRIG:DEL:ASL?;:TRIG:DEL:SB?;:TRIG:DEL:TYPE?"), "CHAN1;POS;CHAN4;GRE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:DEL:TUPP?"), "9.9E37");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"));
+        let lower: f64 = line(&mut s, &mut ui, &cv, ":TRIG:DEL:TLOW?").parse().unwrap();
+        assert!(near(lower, 40e-6), "{lower}");
+        line(&mut s, &mut ui, &cv, ":TRIG:DEL:TYPE GOUT");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:DEL:TYPE?"), "GOUT");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE SET");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:SHOL:DSRC?;:TRIG:SET:CSRC?;:TRIG:SHOL:SLOP?;:TRIG:SHOL:TYPE?"), "CHAN3;CHAN4;POS;SETH");
+        line(&mut s, &mut ui, &cv, ":TRIG:SHOL:TYPE SET");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        assert!(line(&mut s, &mut ui, &cv, ":TRIG:SHOL:PATT?").starts_with("-113"));
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-113"));
+        line(&mut s, &mut ui, &cv, ":TRIG:SHOL:STIM 0.000005");
+        let setup: f64 = line(&mut s, &mut ui, &cv, ":TRIG:SHOL:STIM?").parse().unwrap();
+        let hold: f64 = line(&mut s, &mut ui, &cv, ":TRIG:SHOL:HTIM?").parse().unwrap();
+        assert!(near(setup, 5e-6) && near(hold, 2e-6), "{setup} {hold}");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE NEDG");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:NEDG:SOUR?;:TRIG:NEDG:SLOP?;:TRIG:NEDG:EDGE?"), "CHAN3;NEG;1");
+        let idle: f64 = line(&mut s, &mut ui, &cv, ":TRIG:NEDG:IDLE?").parse().unwrap();
+        assert!(near(idle, 50e-6), "{idle}");
+        line(&mut s, &mut ui, &cv, ":TRIG:NEDG:EDGE 0");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        line(&mut s, &mut ui, &cv, ":TRIG:NEDG:EDGE 20");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:NEDG:EDGE?"), "20");
         line(&mut s, &mut ui, &cv, ":TRIG:MODE EDGE");
         assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?"), "EDGE");
     }
