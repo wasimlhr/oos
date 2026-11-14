@@ -6,7 +6,9 @@
 //! :CHANnel<n>:DISPlay|SCALe|OFFSet|POSition|COUPling|BWLimit|PROBe|INVert|UNITs|VERNier|TCALibrate|BIAS|ZERO|EXPand|LABel:SHOW|LABel:CONTent,
 //! :TIMebase[:MAIN]:SCALe|OFFSet, :TIMebase:DELay:ENABle|SCALe|OFFSet, :TIMebase:VERNier, :TIMebase:HREFerence:MODE, :TIMebase:MODE, :TIMebase:ROLL,
 //! :TIMebase:XY:ENABle|X|Y|Z,
-//! :TRIGger:MODE? :TRIGger:EDGE:SOURce|LEVel|SLOPe, :TRIGger:SWEep, :TRIGger:HOLDoff, :TRIGger:STATus?,
+//! :TRIGger:MODE EDGE|PULSe|SLOPe|VIDeo|PATTern|DURation|TIMeout|RUNT|WINDow|DELay|SETup|NEDGe|RS232|IIC|SPI|CAN|LIN,
+//! :TRIGger:EDGE:SOURce|LEVel|SLOPe, :TRIGger:PULSe:SOURce|POLarity|WHEN|UWIDth|LWIDth|LEVel,
+//! :TRIGger:SWEep, :TRIGger:HOLDoff, :TRIGger:STATus?,
 //! :ACQuire:SRATe?|MDEPth[?] (AUTO, 1k..125M)|TYPE NORM/PEAK/AVER/HRES|AVERages|ULTRa:MAXFrame,
 //! :MEASure:ITEM[?] <item>[,CHANn|Rn[,src]] (the set form adds a readout row), :MEASure:SOURce, :MEASure:CLEar, :MEASure:INDicator,
 //! :MEASure:STRip?, :MEASure:STRip:DOCK UNDer|LEFT|RIGHt|ABOVe, :MEASure:READout?, :EYE:ITEM? <figure>,
@@ -1049,16 +1051,6 @@ impl Scpi {
             }
             if kw(n0, "TRIGger") {
                 let last = *nodes.last()?;
-                if nodes.len() == 2 && kw(last, "MODE") {
-                    if query {
-                        return Some(t("EDGE"));
-                    }
-                    if kw(arg, "EDGE") {
-                        return Some(None);
-                    }
-                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
-                    return Some(None);
-                }
                 if nodes.len() == 2 && kw(last, "STATus") {
                     let s = match (m.run, m.status) {
                         (RunState::Stop, _) => "STOP",
@@ -1218,6 +1210,12 @@ impl Scpi {
         }
         // measurement, waveform, display, system (need the record / canvas)
         let n0 = nodes.first().copied().unwrap_or("");
+        if kw(n0, "TRIGger") && nodes.len() == 2 && kw(nodes[1], "MODE") {
+            return self.trigger_mode(ui, query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "PULSe") {
+            return self.trigger_pulse(ui, nodes[2], query, arg);
+        }
         let (channel, channel_n) = suffix(n0);
         if kw(channel, "CHANnel") && nodes.len() == 2 && kw(nodes[1], "ZERO") && !query {
             let Some(c) = channel_n.and_then(|n| n.checked_sub(1)).filter(|&c| c < NCH) else {
@@ -1879,6 +1877,204 @@ impl Scpi {
             return self.counter_cmd(ui, &nodes[1..], query, arg);
         }
         self.push_err(format!("-113,\"Undefined header\" {}", cmd));
+        None
+    }
+
+    /// The trigger-type knob, including a protocol trigger by the decoder's name.
+    fn trigger_mode(&mut self, ui: &mut Ui, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if query {
+            let name = match ui.m.trig_type {
+                TrigType::Edge => "EDGE",
+                TrigType::Pulse => "PULS",
+                TrigType::Slope => "SLOP",
+                TrigType::Video => "VID",
+                TrigType::Pattern => "PATT",
+                TrigType::Duration => "DUR",
+                TrigType::Timeout => "TIM",
+                TrigType::Runt => "RUNT",
+                TrigType::Window => "WIND",
+                TrigType::Delay => "DEL",
+                TrigType::SetupHold => "SET",
+                TrigType::NthEdge => "NEDG",
+                TrigType::Bus => return t(&proto_token(ui.m.dec_proto)),
+            };
+            return t(name);
+        }
+        let kind = if kw(arg, "EDGE") {
+            Some(TrigType::Edge)
+        } else if kw(arg, "PULSe") {
+            Some(TrigType::Pulse)
+        } else if kw(arg, "SLOPe") {
+            Some(TrigType::Slope)
+        } else if kw(arg, "VIDeo") {
+            Some(TrigType::Video)
+        } else if kw(arg, "PATTern") {
+            Some(TrigType::Pattern)
+        } else if kw(arg, "DURation") {
+            Some(TrigType::Duration)
+        } else if kw(arg, "TIMeout") {
+            Some(TrigType::Timeout)
+        } else if kw(arg, "RUNT") {
+            Some(TrigType::Runt)
+        } else if kw(arg, "WINDow") {
+            Some(TrigType::Window)
+        } else if kw(arg, "DELay") {
+            Some(TrigType::Delay)
+        } else if kw(arg, "SETup") {
+            Some(TrigType::SetupHold)
+        } else if kw(arg, "NEDGe") {
+            Some(TrigType::NthEdge)
+        } else {
+            None
+        };
+        if let Some(kind) = kind {
+            ui.trig_type_set(kind);
+            ui.mark_changed();
+            return None;
+        }
+        if let Some(p) = parse_proto(arg) {
+            ui.trig_bus_set(p);
+            ui.mark_changed();
+            return None;
+        }
+        self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+        None
+    }
+
+    /// Pulse width, polarity, source, and level. The width that the When row is not using returns -221.
+    fn trigger_pulse(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "SOURce") {
+            if query {
+                return t(&ui.m.trig_line().map_or(format!("CHAN{}", ui.m.trig_src + 1), |n| format!("D{}", n)));
+            }
+            let word = arg.trim();
+            if let Some(n) = word.to_ascii_uppercase().strip_prefix('D').and_then(|n| n.parse::<u8>().ok()).filter(|&n| n < 16) {
+                if !ui.m.la_on() {
+                    self.push_err("-224,\"Illegal parameter value\" no logic analyser".into());
+                    return None;
+                }
+                ui.m.trig_type = TrigType::Pulse;
+                ui.m.trig_la = Some(n);
+                ui.mark_changed();
+                return None;
+            }
+            let Some(c) = parse_ch(word) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Pulse;
+            ui.m.ch[c].on = true;
+            ui.m.trig_src = c;
+            ui.m.trig_la = None;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "POLarity") {
+            if query {
+                return t(if ui.m.trig_pol == Pol::Pos { "POS" } else { "NEG" });
+            }
+            ui.m.trig_type = TrigType::Pulse;
+            ui.m.trig_pol = if kw(arg, "POSitive") {
+                Pol::Pos
+            } else if kw(arg, "NEGative") {
+                Pol::Neg
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "WHEN") {
+            if query {
+                return t(match ui.m.trig_when {
+                    WhenKind::Gt => "GRE",
+                    WhenKind::Lt => "LESS",
+                    WhenKind::In => "GLES",
+                    WhenKind::Out => "OUT",
+                    WhenKind::Off => "OFF",
+                });
+            }
+            ui.m.trig_type = TrigType::Pulse;
+            ui.m.trig_when = if kw(arg, "GREater") {
+                WhenKind::Gt
+            } else if kw(arg, "LESS") {
+                WhenKind::Lt
+            } else if kw(arg, "GLESs") {
+                WhenKind::In
+            } else if kw(arg, "OUTside") {
+                WhenKind::Out
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "LEVel") {
+            if query {
+                return t(&e(ui.m.trig_level as f64));
+            }
+            let Some(v) = num(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Pulse;
+            ui.m.trig_level = v;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "UWIDth") || kw(which, "LWIDth") {
+            return self.pulse_width(ui, kw(which, "UWIDth"), query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:PULSe:{}", which));
+        None
+    }
+
+    /// Upper (`upper`) or lower pulse limit. Greater uses the lower limit. Less uses the upper limit. Inside and outside use both.
+    fn pulse_width(&mut self, ui: &mut Ui, upper: bool, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let uses = match ui.m.trig_when {
+            WhenKind::Gt => !upper,
+            WhenKind::Lt => upper,
+            WhenKind::In | WhenKind::Out => true,
+            WhenKind::Off => false,
+        };
+        if !uses {
+            self.push_err("-221,\"Settings conflict\"".into());
+            return if query { t("9.9E37") } else { None };
+        }
+        let read = if matches!(ui.m.trig_when, WhenKind::In | WhenKind::Out) {
+            if upper { ui.m.trig_t2 } else { ui.m.trig_t1 }
+        } else {
+            ui.m.trig_t1
+        };
+        if query {
+            return t(&e(read as f64));
+        }
+        let Some(v) = num(arg).filter(|&v| v > 0.0) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = TrigType::Pulse;
+        if matches!(ui.m.trig_when, WhenKind::In | WhenKind::Out) {
+            if upper {
+                if ui.m.trig_t1 > v {
+                    ui.m.trig_t1 = v;
+                }
+                ui.m.trig_t2 = v;
+            } else {
+                if ui.m.trig_t2 < v {
+                    ui.m.trig_t2 = v;
+                }
+                ui.m.trig_t1 = v;
+            }
+        } else {
+            ui.m.trig_t1 = v;
+        }
+        ui.mark_changed();
         None
     }
 
@@ -4196,6 +4392,40 @@ mod tests {
 
     fn captures(ui: &Ui) -> f64 {
         crate::json::parse(&ui.workflow_state()).unwrap().get("captures").unwrap().num().unwrap()
+    }
+
+    #[test]
+    fn a_pulse_trigger_uses_the_screen_width_and_polarity() {
+        let (mut s, mut ui, cv) = session();
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?"), "EDGE");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE PULS");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?;:TRIG:PULS:SOUR?;:TRIG:PULS:POL?;:TRIG:PULS:WHEN?"), "PULS;CHAN4;POS;LESS");
+        let upper: f64 = line(&mut s, &mut ui, &cv, ":TRIG:PULS:UWID?").parse().unwrap();
+        assert!((upper - 30e-6).abs() < 1e-9, "{upper}");
+        line(&mut s, &mut ui, &cv, ":TRIG:PULS:LWID 1e-6");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "less-than uses the upper width");
+        line(&mut s, &mut ui, &cv, ":TRIG:PULS:UWID 5e-6;:TRIG:MODE PULS");
+        let kept: f64 = line(&mut s, &mut ui, &cv, ":TRIG:PULS:UWID?").parse().unwrap();
+        assert!((kept - 5e-6).abs() / 5e-6 < 1e-3, "the same type again keeps the width, {kept}");
+        line(&mut s, &mut ui, &cv, ":TRIG:PULS:WHEN GRE;:TRIG:PULS:LWID 4e-6;:TRIG:PULS:UWID 1e-6");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"));
+        let lower: f64 = line(&mut s, &mut ui, &cv, ":TRIG:PULS:LWID?").parse().unwrap();
+        assert!((lower - 4e-6).abs() / 4e-6 < 1e-3, "{lower}");
+        line(&mut s, &mut ui, &cv, ":TRIG:PULS:WHEN GLES;:TRIG:PULS:LWID 2e-6;:TRIG:PULS:UWID 8e-6;:TRIG:PULS:POL NEG;:TRIG:PULS:SOUR CHAN1;:TRIG:PULS:LEV 0.2");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:PULS:WHEN?;:TRIG:PULS:POL?;:TRIG:PULS:SOUR?"), "GLES;NEG;CHAN1");
+        let (lo, hi): (f64, f64) = {
+            let both = line(&mut s, &mut ui, &cv, ":TRIG:PULS:LWID?;:TRIG:PULS:UWID?");
+            let mut parts = both.split(';');
+            (parts.next().unwrap().parse().unwrap(), parts.next().unwrap().parse().unwrap())
+        };
+        assert!((lo - 2e-6).abs() < 1e-12 && (hi - 8e-6).abs() < 1e-12, "{lo} {hi}");
+        assert!((ui.m.trig_level - 0.2).abs() < 1e-6);
+        line(&mut s, &mut ui, &cv, ":TRIG:PULS:WHEN OUT");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:PULS:WHEN?"), "OUT");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE SLOP");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?"), "SLOP");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE EDGE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?"), "EDGE");
     }
 
     #[test]

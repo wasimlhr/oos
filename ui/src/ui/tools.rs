@@ -583,6 +583,22 @@ impl Ui {
         (st.n, current, st.min, st.max, mean, dev)
     }
 
+    /// The trigger-type knob. Repeating the current type leaves its levels and times alone.
+    pub(crate) fn trig_type_set(&mut self, t: TrigType) {
+        if self.m.trig_type != t {
+            self.set_trig_type(t);
+        }
+    }
+
+    /// A protocol trigger, the same pair the Bus type uses: the decoder, then the type.
+    pub(crate) fn trig_bus_set(&mut self, p: Proto) {
+        if self.m.trig_type == TrigType::Bus && self.m.dec_proto == p {
+            return;
+        }
+        self.set_dec_proto(p);
+        self.set_trig_type(TrigType::Bus);
+    }
+
     pub(crate) fn zoom_set_remote(&mut self, on: bool) {
         self.set_zoom(on);
     }
