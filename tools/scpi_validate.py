@@ -502,6 +502,8 @@ def validate(oos, result):
     oos.write(":MEASure:COUNter:ENABle ON")
     oos.write(":MEASure:COUNter:SOURce CHANnel2")
     result.equal("measure counter", oos.query(":COUNter:ENABle?;:COUNter:SOURce?"), "1;CHAN2")
+    result.equal("rigol area name", oos.query(":MEASure:ITEM? MARea,R1"), oos.query(":MEASure:ITEM? AREA,R1"))
+    result.equal("rigol period rms name", oos.query(":MEASure:ITEM? PVRMs,R1"), oos.query(":MEASure:ITEM? CRMS,R1"))
 
     oos.write(":MEASure:SETup:MIN 20")
     oos.write(":MEASure:SETup:MAX 80")

@@ -383,10 +383,13 @@ const MEAS_ITEMS: &[(&str, &str, Meas)] = &[
     ("VLOWer", "VLOWER", Meas::Vlower),
     ("CAVG", "CAVG", Meas::VavgCyc),
     ("CRMS", "CRMS", Meas::VrmsCyc),
+    ("PVRMs", "CRMS", Meas::VrmsCyc),
     ("ACRms", "ACRMS", Meas::VrmsAc),
     ("SDEViation", "SDEVIATION", Meas::StdDev),
     ("AREA", "AREA", Meas::Area),
+    ("MARea", "AREA", Meas::Area),
     ("CARea", "CAREA", Meas::AreaCyc),
+    ("MPARea", "CAREA", Meas::AreaCyc),
     ("PPULses", "PPULSES", Meas::PPulses),
     ("NPULses", "NPULSES", Meas::NPulses),
     ("PEDGes", "PEDGES", Meas::PEdges),
@@ -394,7 +397,9 @@ const MEAS_ITEMS: &[(&str, &str, Meas)] = &[
     ("TVMAX", "TVMAX", Meas::TVmax),
     ("TVMIN", "TVMIN", Meas::TVmin),
     ("PSLew", "PSLEW", Meas::PSlew),
+    ("PSLewrate", "PSLEW", Meas::PSlew),
     ("NSLew", "NSLEW", Meas::NSlew),
+    ("NSLewrate", "NSLEW", Meas::NSlew),
     ("ESTUI", "ESTUI", Meas::EstUi),
     ("UI", "ESTUI", Meas::EstUi),
     ("MEDian", "MEDIAN", Meas::Median),
@@ -4354,6 +4359,21 @@ mod tests {
         assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:STAT:DISP?;:MEAS:STR?"), "1;VPP,R1,1.000000E+00");
         line(&mut s, &mut ui, &cv, ":MEAS:STAT:RES");
         assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:STAT:ITEM? CNT,VPP,R1"), "0.000000E+00");
+    }
+
+    #[test]
+    fn rigol_measurement_names_match_the_screen_items() {
+        let (mut s, mut ui, cv) = session();
+        line(&mut s, &mut ui, &cv, ":TIM:SCAL 1e-3");
+        for _ in 0..8 {
+            ui.step(0.05);
+        }
+        for (rigol, screen) in [("MAREA", "AREA"), ("MPAREA", "CAREA"), ("PVRMS", "CRMS"), ("PSLEWRATE", "PSLEW"), ("NSLEWRATE", "NSLEW")] {
+            let a: f64 = line(&mut s, &mut ui, &cv, &format!(":MEAS:ITEM? {rigol},CHAN1")).parse().unwrap();
+            let b: f64 = line(&mut s, &mut ui, &cv, &format!(":MEAS:ITEM? {screen},CHAN1")).parse().unwrap();
+            assert!((a - b).abs() < 1e-9 || (a > 1e37 && b > 1e37), "{rigol} {a} {screen} {b}");
+            assert!(a.is_finite() && a < 1e37, "{rigol} {a}");
+        }
     }
 
     #[test]
