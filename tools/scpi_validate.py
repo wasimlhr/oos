@@ -24,6 +24,7 @@ import math
 from pathlib import Path
 import socket
 import sys
+import tempfile
 import time
 import urllib.parse
 import urllib.request
@@ -335,6 +336,15 @@ def validate(oos, result):
     oos.write(":REFerence:SHOW 1,OFF")
     result.equal("reference hidden", oos.query(":REFerence:SHOW? 1"), "0")
     oos.write(":REFerence:SHOW 1,ON")
+    oos.write(":REFerence:SLOT R1")
+    exported = Path(tempfile.gettempdir()) / "oos-ref-export.csv"
+    oos.write(f':REFerence:EXPort "{exported}"')
+    text = exported.read_text()
+    result.add("reference export is the slot csv", text.startswith("Time (s),Volts\n") and "," in text.splitlines()[1])
+    oos.write(":REFerence:SLOT R10")
+    oos.write(f':REFerence:LOAD "{exported}"')
+    result.numeric("exported reference reloads", oos.measure("VPP", "R10"), 4.0, absolute=2e-5)
+    oos.write(":REFerence:SLOT R1")
 
     oos.write(":WAVeform:SOURce R1")
     oos.write(":WAVeform:MODE RAW")

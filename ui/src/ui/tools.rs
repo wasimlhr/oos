@@ -813,14 +813,36 @@ impl Ui {
 
     /// The reference of the Slot row as CSV: Time (s),Volts.
     pub(super) fn ref_export(&mut self) {
-        let Some(r) = &self.refs[self.ref_sel] else { return self.toast("That slot is empty") };
-        let mut t = String::from("Time (s),Volts\n");
-        for (k, v) in r.v.iter().enumerate() {
-            t.push_str(&format!("{:.12e},{}\n", r.t0 + k as f64 * r.dt, v));
+        match self.ref_export_named("") {
+            Ok(p) => self.toast_saved(&p, Ok(())),
+            Err(error) if error == "empty" => self.toast("That slot is empty"),
+            Err(error) => self.toast(&error),
         }
-        let p = self.ref_path();
-        let res = crate::store::write(&p, t.as_bytes());
-        self.toast_saved(&p, res);
+    }
+
+    /// Writes the selected slot as CSV. An empty path uses `refN.csv` beside the setups, which is the Export slot button.
+    /// A relative path is beside the setups. `empty` means the slot has no waveform.
+    pub(crate) fn ref_export_named(&self, path: &str) -> Result<std::path::PathBuf, String> {
+        let Some(r) = self.refs.get(self.ref_sel).and_then(|slot| slot.as_ref()) else {
+            return Err("empty".into());
+        };
+        let mut text = String::from("Time (s),Volts\n");
+        for (k, v) in r.v.iter().enumerate() {
+            text.push_str(&format!("{:.12e},{}\n", r.t0 + k as f64 * r.dt, v));
+        }
+        let raw = path.trim().trim_matches('"');
+        let p = if raw.is_empty() {
+            self.ref_path()
+        } else {
+            let named = std::path::Path::new(raw);
+            if named.is_absolute() {
+                named.to_path_buf()
+            } else {
+                self.setup_path().parent().map(|d| d.join(named)).unwrap_or_else(|| named.to_path_buf())
+            }
+        };
+        crate::store::write(&p, text.as_bytes()).map_err(|e| e.to_string())?;
+        Ok(p)
     }
 
     /// Opens a captured waveform into the selected R slot: CSV, OOS `.bin`, or `.wfm` (`:WFM#002` or `:WFM#003`).

@@ -23,7 +23,7 @@
 //! :MAGnetic:ITEM? <item>[,V,I], :INVerter:ITEM? <item>[,src...], :DPT:ITEM? <item>[,V,I[,G]], :BANDwidth:ITEM? <item>[,src],
 //! :WAVeform:SOURce CHANn|Rn|MODE NORM/MAX/RAW|FORMat BYTE/WORD/ASC|STARt|STOP|POINts|DATA?|PREamble?,
 //! :DISPlay:DATA? [BMP|PNG], :DISPlay:TYPE|GRADing:TIME|WBRightness|GBRightness|GRID|RULers|COLor,
-//! :REFerence:SLOT R1..R10, :CURRent, :SOURce, :VSCale, :VOFFset, :COLor, :RESet, :LABel:CONTent, :LOAD <file>, :IMPort [file], :SAVE, :SHOW ON|OFF, :CLEar,
+//! :REFerence:SLOT R1..R10, :CURRent, :SOURce, :VSCale, :VOFFset, :COLor, :RESet, :LABel:CONTent, :LOAD <file>, :IMPort [file], :EXPort [file], :SAVE, :SHOW ON|OFF, :CLEar,
 //! :MEASure:SETup:MAX|MIN (percent thresholds), :MEASure:SETup:PSA|PSB|DSA|DSB,
 //! :SIM:PRESet <name>, :SIM:SLOT R1..R10, :SIM:PLAY ON|OFF, :SIM:SHOW ON|OFF,
 //! :SIM:SSC:MODE OFF|DOWN|CENTER, :SIM:SSC:DEViation <fraction>, :SIM:SSC:FREQuency <Hz>,
@@ -3669,6 +3669,19 @@ impl Scpi {
             let r = if arg.trim().is_empty() { ui.ref_import_slot() } else { ui.ref_load_named(arg) };
             return self.ref_loaded(ui, r);
         }
+        if kw(n0, "EXPort") && !query {
+            return match ui.ref_export_named(arg) {
+                Ok(_) => None,
+                Err(e) if e == "empty" => {
+                    self.push_err("-230,\"Data corrupt or stale\" reference is empty".into());
+                    None
+                }
+                Err(e) => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", e));
+                    None
+                }
+            };
+        }
         self.push_err(format!("-113,\"Undefined header\" :REF:{}", n.join(":")));
         None
     }
@@ -4146,6 +4159,14 @@ mod tests {
         let data = line(&mut s, &mut ui, &cv, ":WAV:DATA?");
         assert!(data.starts_with("#9"), "{data}");
         assert!(data.contains("1.000000E-01"), "{data}");
+        line(&mut s, &mut ui, &cv, ":REF:EXP");
+        let dumped = std::fs::read_to_string(dir.join("ref2.csv")).unwrap();
+        assert!(dumped.starts_with("Time (s),Volts\n"), "{dumped}");
+        assert!(dumped.contains("0.1\n"), "{dumped}");
+        assert!(dumped.contains("1.000000000000e-9,0.4"), "{dumped}");
+        let named = dir.join("lane-out.csv");
+        line(&mut s, &mut ui, &cv, &format!(":REF:EXP \"{}\"", named.display()));
+        assert_eq!(std::fs::read_to_string(&named).unwrap(), dumped);
 
         let bin_src = {
             let mut m = crate::model::Model::default();
@@ -4194,6 +4215,8 @@ mod tests {
 
         line(&mut s, &mut ui, &cv, ":REF:CLE");
         assert_eq!(line(&mut s, &mut ui, &cv, ":WAV:POIN?"), "0");
+        line(&mut s, &mut ui, &cv, ":REF:EXP");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-230,"), "an empty slot has nothing to export");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
