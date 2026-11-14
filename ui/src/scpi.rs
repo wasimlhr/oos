@@ -9,6 +9,7 @@
 //! :TRIGger:MODE EDGE|PULSe|SLOPe|VIDeo|PATTern|DURation|TIMeout|RUNT|WINDow|DELay|SETup|NEDGe|RS232|IIC|SPI|CAN|LIN,
 //! :TRIGger:EDGE:SOURce|LEVel|SLOPe, :TRIGger:PULSe:SOURce|POLarity|WHEN|UWIDth|LWIDth|LEVel,
 //! :TRIGger:SLOPe:SOURce|POLarity|WHEN|TUPPer|TLOWer|WINDow|ALEVel|BLEVel,
+//! :TRIGger:VIDeo:SOURce|POLarity|MODE|LINE|STANdard|LEVel,
 //! :TRIGger:SWEep, :TRIGger:HOLDoff, :TRIGger:STATus?,
 //! :ACQuire:SRATe?|MDEPth[?] (AUTO, 1k..125M)|TYPE NORM/PEAK/AVER/HRES|AVERages|ULTRa:MAXFrame,
 //! :MEASure:ITEM[?] <item>[,CHANn|Rn[,src]] (the set form adds a readout row), :MEASure:SOURce, :MEASure:CLEar, :MEASure:INDicator,
@@ -312,6 +313,11 @@ fn parse_ch(s: &str) -> Option<usize> {
     } else {
         None
     }
+}
+
+/// The line knob stops at half the standard's lines, ten short of the last one.
+fn video_line_max(std: VideoStd) -> u32 {
+    (std.lines() / 2).saturating_sub(10).max(1)
 }
 
 fn shown(v: f64) -> String {
@@ -1219,6 +1225,9 @@ impl Scpi {
         }
         if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "SLOPe") {
             return self.trigger_slope(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "VIDeo") {
+            return self.trigger_video(ui, nodes[2], query, arg);
         }
         let (channel, channel_n) = suffix(n0);
         if kw(channel, "CHANnel") && nodes.len() == 2 && kw(nodes[1], "ZERO") && !query {
@@ -2135,6 +2144,126 @@ impl Scpi {
             return self.when_width(ui, kw(which, "TUPPer"), query, arg, TrigType::Slope);
         }
         self.push_err(format!("-113,\"Undefined header\" :TRIGger:SLOPe:{}", which));
+        None
+    }
+
+    /// PAL or NTSC, the sync the screen shows, and the line number while that sync is Line.
+    fn trigger_video(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "SOURce") {
+            if query {
+                return t(&format!("CHAN{}", ui.m.trig_src + 1));
+            }
+            let Some(c) = parse_ch(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Video;
+            ui.m.ch[c].on = true;
+            ui.m.trig_src = c;
+            ui.m.trig_la = None;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "POLarity") {
+            // The hardware programs one polarity. The video menu has no polarity row.
+            if query {
+                return t("POS");
+            }
+            if kw(arg, "POSitive") {
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" video polarity is fixed".into());
+            return None;
+        }
+        if kw(which, "STANdard") {
+            if query {
+                return t(if ui.m.video_std == VideoStd::Pal { "PALS" } else { "NTSC" });
+            }
+            let std = if kw(arg, "PALSecam") || arg.trim().eq_ignore_ascii_case("PAL") {
+                Some(VideoStd::Pal)
+            } else if kw(arg, "NTSC") {
+                Some(VideoStd::Ntsc)
+            } else {
+                None
+            };
+            let Some(std) = std else {
+                self.push_err("-224,\"Illegal parameter value\" pal or ntsc".into());
+                return None;
+            };
+            ui.m.trig_type = TrigType::Video;
+            ui.m.video_std = std;
+            let max = video_line_max(std);
+            if ui.m.video_line > max {
+                ui.m.video_line = max;
+            }
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "MODE") {
+            if query {
+                return t(match ui.m.video_sync {
+                    VSync::AllLines => "ALIN",
+                    VSync::Line => "LINE",
+                    VSync::Odd => "ODDF",
+                    VSync::Even => "EVEN",
+                    VSync::AllFields => "FIELD",
+                });
+            }
+            let sync = if kw(arg, "ALINes") {
+                Some(VSync::AllLines)
+            } else if kw(arg, "LINE") {
+                Some(VSync::Line)
+            } else if kw(arg, "ODDField") {
+                Some(VSync::Odd)
+            } else if kw(arg, "EVENfield") {
+                Some(VSync::Even)
+            } else if kw(arg, "FIELds") {
+                Some(VSync::AllFields)
+            } else {
+                None
+            };
+            let Some(sync) = sync else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Video;
+            ui.m.video_sync = sync;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "LINE") {
+            if ui.m.video_sync != VSync::Line {
+                self.push_err("-221,\"Settings conflict\"".into());
+                return if query { t("9.9E37") } else { None };
+            }
+            if query {
+                return t(&ui.m.video_line.to_string());
+            }
+            let max = video_line_max(ui.m.video_std);
+            let Some(n) = arg.trim().parse::<u32>().ok().filter(|&n| (1..=max).contains(&n)) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Video;
+            ui.m.video_line = n;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "LEVel") {
+            if query {
+                return t(&e(ui.m.trig_level as f64));
+            }
+            let Some(v) = num(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Video;
+            ui.m.trig_level = v;
+            ui.mark_changed();
+            return None;
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:VIDeo:{}", which));
         None
     }
 
@@ -4547,6 +4676,21 @@ mod tests {
         assert!((ui.m.trig_level - 1.5).abs() < 1e-6 && (ui.m.trig_level2 - 0.4).abs() < 1e-6);
         line(&mut s, &mut ui, &cv, ":TRIG:SLOP:POL RFAL");
         assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:SLOP:POL?"), "RFAL");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE VID");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?;:TRIG:VID:SOUR?;:TRIG:VID:STAN?;:TRIG:VID:MODE?;:TRIG:VID:POL?"), "VID;CHAN2;PALS;FIELD;POS");
+        let level: f64 = line(&mut s, &mut ui, &cv, ":TRIG:VID:LEV?").parse().unwrap();
+        assert!((level - 0.15).abs() < 1e-6, "{level}");
+        line(&mut s, &mut ui, &cv, ":TRIG:VID:LINE 20");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "the line number applies when the sync is Line");
+        line(&mut s, &mut ui, &cv, ":TRIG:VID:MODE LINE;:TRIG:VID:LINE 100");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:VID:MODE?;:TRIG:VID:LINE?"), "LINE;100");
+        line(&mut s, &mut ui, &cv, ":TRIG:VID:STAN NTSC;:TRIG:VID:LINE 400");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:VID:LINE?"), "100");
+        line(&mut s, &mut ui, &cv, ":TRIG:VID:MODE ODDF;:TRIG:VID:POL NEG;:TRIG:VID:STAN 720P60");
+        let err = line(&mut s, &mut ui, &cv, ":SYST:ERR?");
+        assert!(err.starts_with("-224"), "{err}");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:VID:MODE?;:TRIG:VID:STAN?;:TRIG:VID:POL?"), "ODDF;NTSC;POS");
         line(&mut s, &mut ui, &cv, ":TRIG:MODE EDGE");
         assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?"), "EDGE");
     }
