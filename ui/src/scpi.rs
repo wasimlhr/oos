@@ -4141,6 +4141,19 @@ mod tests {
     }
 
     #[test]
+    fn a_reference_scale_changes_the_measurement_immediately() {
+        let (mut s, mut ui, cv) = reference_session();
+        let freq: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? FREQ,R1").parse().unwrap();
+        assert!((freq - 25e6).abs() / 25e6 < 0.02, "{freq}");
+        line(&mut s, &mut ui, &cv, ":REF:VSC 1,10");
+        let gone: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? FREQ,R1").parse().unwrap();
+        assert!(gone > 1e37, "10 V/div makes the square too small to time, {gone}");
+        line(&mut s, &mut ui, &cv, ":REF:VSC 1,0.5");
+        let back: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? FREQ,R1").parse().unwrap();
+        assert!((back - 25e6).abs() / 25e6 < 0.02, "{back}");
+    }
+
+    #[test]
     fn reference_run_stop_are_idempotent_and_hold_acquisitions() {
         let (mut s, mut ui, cv) = reference_session();
         assert_eq!(line(&mut s, &mut ui, &cv, ":RUN;:SIM:PLAY?"), "1", "RUN updates replay immediately");

@@ -937,8 +937,11 @@ impl Ui {
             return false;
         }
         self.ref_sel = slot;
-        let Some(r) = self.refs.get_mut(slot).and_then(|r| r.as_mut()) else { return false };
-        r.vpd = vpd;
+        {
+            let Some(r) = self.refs.get_mut(slot).and_then(|r| r.as_mut()) else { return false };
+            r.vpd = vpd;
+        }
+        self.measure_refs();
         true
     }
 
@@ -977,9 +980,12 @@ impl Ui {
         }
         let Some(src) = self.refs.get(slot).and_then(|r| r.as_ref()).map(|r| r.src) else { return false };
         let vpd = self.m.ch[src.min(n_ch() - 1)].volts_per_div();
-        let Some(r) = self.refs.get_mut(slot).and_then(|r| r.as_mut()) else { return false };
-        r.offset = 0.0;
-        r.vpd = vpd.max(1e-9);
+        {
+            let Some(r) = self.refs.get_mut(slot).and_then(|r| r.as_mut()) else { return false };
+            r.offset = 0.0;
+            r.vpd = vpd.max(1e-9);
+        }
+        self.measure_refs();
         true
     }
 
