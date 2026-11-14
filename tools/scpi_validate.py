@@ -209,6 +209,14 @@ def validate(oos, result):
             result.numeric(f"trapezoid {item} {thresholds}", oos.measure(item, "R2"),
                            fraction * RAMP_TIME, absolute=1.1e-9, source="R2")
     oos.write(":MEASure:REFS 10/90")
+    result.equal("threshold middle", oos.query(":MEASure:SETup:MID?"), "50")
+    oos.write(":MEASure:SETup:MIN 20;:MEASure:SETup:MAX 80")
+    oos.write(":MEASure:THReshold:DEFault")
+    result.equal("default thresholds", oos.query(":MEASure:SETup:MIN?;:MEASure:SETup:MAX?"), "10;90")
+    result.equal("threshold type", oos.query(":MEASure:THReshold:TYPE?"), "PERC")
+    result.equal("measurement range", oos.query(":MEASure:AREA?"), "MAIN")
+    oos.write(":MEASure:AREA ZOOM")
+    result.equal("zoom range refused", oos.query(":SYSTem:ERRor?").split(",")[0], "-224")
 
     result.numeric("source isolation R1", oos.measure("VPP", "R1"), 4.0, absolute=2e-5)
     result.numeric("source isolation REF2 alias", oos.measure("VPP", "REF2"), 2.0, absolute=2e-5)
@@ -368,6 +376,10 @@ def validate(oos, result):
     oos.write(":CURSor:TRACk:SOURce1 CHANnel1")
     oos.write(":CURSor:TRACk:SOURce2 CHANnel2")
     result.equal("track cursor sources", oos.query(":CURSor:TRACk:SOURce1?;:CURSor:TRACk:SOURce2?"), "CHAN1;CHAN2")
+    oos.write(":CURSor:TRACk:MODE X")
+    result.equal("track axis", oos.query(":CURSor:TRACk:MODE?"), "X")
+    oos.write(":CURSor:TRACk:MODE Y")
+    result.equal("vertical track refused", oos.query(":SYSTem:ERRor?").split(",")[0], "-224")
     oos.write(":CURSor:MODE OFF")
     result.equal("cursors off have no delta", float(oos.query(":CURSor:MANual:XDELta?")), 9.9e37)
 

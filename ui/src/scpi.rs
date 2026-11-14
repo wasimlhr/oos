@@ -11,9 +11,9 @@
 //! :MEASure:ITEM[?] <item>[,CHANn|Rn[,src]] (the set form adds a readout row), :MEASure:SOURce, :MEASure:CLEar, :MEASure:INDicator,
 //! :MEASure:STRip?, :MEASure:STRip:DOCK UNDer|LEFT|RIGHt|ABOVe, :MEASure:READout?, :EYE:ITEM? <figure>,
 //! :MEASure:COUNter:ENABle|SOURce|VALue? (the same counter as :COUNter),
-//! :MEASure:STATistic:DISPlay|RESet|ITEM, :MEASure:REFS 10/90|20/80, :MEASure:TSETup, :MEASure:THOLd,
+//! :MEASure:STATistic:DISPlay|RESet|ITEM, :MEASure:REFS 10/90|20/80, :MEASure:AREA MAIN, :MEASure:TSETup, :MEASure:THOLd,
 //! :MEASure:BURSt:IDLE, :MEASure:OUTSide ABOVe|BELow|BOTH, :MEASure:NPERiods, :MEASure:EDGes CLOCk|DATA,
-//! :CURSor:MODE OFF|MAN|TRAC|XY, :CURSor:MANual:TYPE TIME|AMPLitude, :CAX|:CBX|:CAY|:CBY, :AXValue|:AYValue|:BXValue|:BYValue, :XDELta|:IXDelta|:YDELta, :CURSor:MEASure:INDicator,
+//! :CURSor:MODE OFF|MAN|TRAC|XY, :CURSor:TRACk:MODE X, :CURSor:MANual:TYPE TIME|AMPLitude, :CAX|:CBX|:CAY|:CBY, :AXValue|:AYValue|:BXValue|:BYValue, :XDELta|:IXDelta|:YDELta, :CURSor:MEASure:INDicator,
 //! :DVM:ENABle|SOURce|MODE|CURRent?, :COUNter:ENABle|SOURce|MODE|NDIGits|CURRent?,
 //! :MASK:ENABle|SOURce|X|Y|CREate|RESet|OPERate|FAILed?|PASSed?|TOTal?,
 //! :HISTogram:ENABle|TYPE|SOURce, :HISTogram:STATistics:RESult?,
@@ -24,7 +24,7 @@
 //! :WAVeform:SOURce CHANn|Rn|MODE NORM/MAX/RAW|FORMat BYTE/WORD/ASC|STARt|STOP|POINts|DATA?|PREamble?,
 //! :DISPlay:DATA? [BMP|PNG], :DISPlay:TYPE|GRADing:TIME|WBRightness|GBRightness|GRID|RULers|COLor,
 //! :REFerence:SLOT R1..R10, :CURRent, :SOURce, :VSCale, :VOFFset, :COLor, :RESet, :LABel:CONTent, :LOAD <file>, :IMPort [file], :EXPort [file], :SAVE, :SHOW ON|OFF, :CLEar,
-//! :MEASure:SETup:MAX|MIN (percent thresholds), :MEASure:SETup:PSA|PSB|DSA|DSB,
+//! :MEASure:SETup:MAX|MIN|MID (the middle stays 50), :MEASure:THReshold:TYPE PERCent, :MEASure:THReshold:DEFault, :MEASure:SETup:PSA|PSB|DSA|DSB,
 //! :SIM:PRESet <name>, :SIM:SLOT R1..R10, :SIM:PLAY ON|OFF, :SIM:SHOW ON|OFF,
 //! :SIM:SSC:MODE OFF|DOWN|CENTER, :SIM:SSC:DEViation <fraction>, :SIM:SSC:FREQuency <Hz>,
 //! :SIM:JITTer:DCD <seconds pp>|:CORRelated <seconds RMS>|:CORNer <Hz>, :SIM:PATTern PRBS7..31.
@@ -1228,6 +1228,17 @@ impl Scpi {
             if kw(which, "MAX") || kw(which, "MIN") {
                 return self.meas_threshold(ui, kw(which, "MAX"), query, arg);
             }
+            if kw(which, "MID") {
+                // Edges are taken at half the amplitude. The middle is not a separate percent.
+                if query {
+                    return t("50");
+                }
+                if arg.trim().parse::<f64>().ok().is_some_and(|v| (v - 50.0).abs() < 1e-6) {
+                    return None;
+                }
+                self.push_err("-224,\"Illegal parameter value\" middle is 50".into());
+                return None;
+            }
             if kw(which, "PSA") || kw(which, "DSA") || kw(which, "PSB") || kw(which, "DSB") {
                 let second = kw(which, "PSB") || kw(which, "DSB");
                 if query {
@@ -1245,6 +1256,28 @@ impl Scpi {
         }
         if kw(n0, "TIMebase") {
             return self.timebase_more(ui, &nodes[1..], query, arg);
+        }
+        if kw(n0, "MEASure") && nodes.len() == 3 && kw(nodes[1], "THReshold") {
+            let which = nodes[2];
+            if kw(which, "TYPE") {
+                if query {
+                    return t("PERC");
+                }
+                if kw(arg, "PERCent") {
+                    return None;
+                }
+                self.push_err("-224,\"Illegal parameter value\" percent thresholds".into());
+                return None;
+            }
+            if kw(which, "DEFault") && !query {
+                ui.m.meas_lpct = 0.1;
+                ui.m.meas_hpct = 0.9;
+                ui.measure_last();
+                ui.mark_changed();
+                return None;
+            }
+            self.push_err(format!("-113,\"Undefined header\" :MEASure:THReshold:{}", which));
+            return None;
         }
         if kw(n0, "MEASure") && nodes.len() == 2 {
             let n1 = nodes[1];
@@ -1296,6 +1329,17 @@ impl Scpi {
             }
             if kw(n1, "INDicator") {
                 return self.meas_indicator(ui, query, arg);
+            }
+            if kw(n1, "AREA") {
+                // Measurements read the main record. The zoom window does not change them.
+                if query {
+                    return t("MAIN");
+                }
+                if kw(arg, "MAIN") {
+                    return None;
+                }
+                self.push_err("-224,\"Illegal parameter value\" measurements use the main record".into());
+                return None;
             }
             if kw(n1, "OUTSide") || kw(n1, "NPERiods") || kw(n1, "EDGes") {
                 return self.meas_gate(ui, n1, query, arg);
@@ -2153,6 +2197,17 @@ impl Scpi {
         // Time cursors use cur_a/cur_b. Voltage cursors use them too, until both axes are set: then the screen's
         // XY cursors keep the times in cur_a/cur_b and the voltages in cur_c/cur_d.
         // Track cursor A follows the active channel. Cursor B follows cur_b_ch, or the active channel until set.
+        if n.len() == 2 && kw(n0, "TRACk") && kw(n[1], "MODE") {
+            // Track cursors follow a time and read the voltage there.
+            if query {
+                return t("X");
+            }
+            if kw(arg, "X") {
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" track follows time".into());
+            return None;
+        }
         if n.len() == 2 && (kw(n0, "MANual") || kw(n0, "TRACk")) && (kw(n[1], "SOURce") || kw(n[1], "SOURce1") || kw(n[1], "SOURce2")) {
             let second = kw(n[1], "SOURce2");
             if query {
@@ -4354,6 +4409,11 @@ mod tests {
         assert!(ay.parse::<f64>().unwrap().is_finite() && by.parse::<f64>().unwrap().is_finite(), "{ay} {by}");
         line(&mut s, &mut ui, &cv, "*CLS;:CURS:MODE MAN;:CURS:MAN:SOUR2 CHAN2");
         assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"), "manual mode keeps one source");
+        line(&mut s, &mut ui, &cv, "*CLS;:CURS:MODE TRAC;:CURS:TRAC:MODE X");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CURS:TRAC:MODE?;:SYST:ERR?"), "X;0,\"No error\"");
+        line(&mut s, &mut ui, &cv, ":CURS:TRAC:MODE Y");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"), "track cursors follow time");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CURS:TRAC:MODE?"), "X");
     }
 
     #[test]
@@ -4540,6 +4600,16 @@ mod tests {
         line(&mut s, &mut ui, &cv, ":MEAS:SET:MAX 10");
         assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224,"), "the upper threshold must stay above the lower");
         assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:SET:MAX?"), "80");
+        line(&mut s, &mut ui, &cv, "*CLS;:MEAS:SET:MID 50");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:SET:MID?;:SYST:ERR?"), "50;0,\"No error\"");
+        line(&mut s, &mut ui, &cv, ":MEAS:SET:MID 89");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224,"), "the middle stays at half the amplitude");
+        line(&mut s, &mut ui, &cv, ":MEAS:THR:DEF");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:SET:MIN?;:MEAS:SET:MAX?;:MEAS:THR:TYPE?;:MEAS:AREA?"), "10;90;PERC;MAIN");
+        line(&mut s, &mut ui, &cv, "*CLS;:MEAS:THR:TYPE ABS;:MEAS:AREA ZOOM");
+        let refused = line(&mut s, &mut ui, &cv, ":SYST:ERR?");
+        assert!(refused.starts_with("-224,"), "{refused}");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:THR:TYPE?;:MEAS:AREA?"), "PERC;MAIN");
     }
 
     #[test]
