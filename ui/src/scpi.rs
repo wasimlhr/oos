@@ -15,6 +15,7 @@
 //! :TRIGger:WINDows:SOURce|SLOPe|POSition|TIME|WHEN|ALEVel|BLEVel, :TRIGger:DELay:SA|ASLop|SB|BSLop|TYPE|TUPPer|TLOWer|ALEVel|BLEVel,
 //! :TRIGger:SHOLd:DSRC|CSRC|SLOPe|TYPE|STIMe|HTIMe|DLEVel|CLEVel, :TRIGger:NEDGe:SOURce|SLOPe|IDLE|EDGE|LEVel,
 //! :TRIGger:ZONE<n>:STATe|SOURce|MODE|PLACement|POINts|CLEar,
+//! :SEARch:STATe|COUNt?|MODE|EVENt|VALue?,
 //! :TRIGger:SWEep, :TRIGger:HOLDoff, :TRIGger:STATus?,
 //! :ACQuire:SRATe?|MDEPth[?] (AUTO, 1k..125M)|TYPE NORM/PEAK/AVER/HRES|AVERages|ULTRa:MAXFrame,
 //! :MEASure:ITEM[?] <item>[,CHANn|Rn[,src]] (the set form adds a readout row), :MEASure:SOURce, :MEASure:CLEar, :MEASure:INDicator,
@@ -108,6 +109,8 @@ pub struct Scpi {
     err: Vec<String>,
     /// IEEE 488.2 event status register. *ESR? returns it and clears it. Bit 7 is set at power on.
     esr: u8,
+    /// The search event last jumped to, 1-based. 0 means none.
+    search_at: u32,
 }
 
 /// SCPI keyword match: the long form or its short form (the upper-case part), case-insensitive.
@@ -174,6 +177,43 @@ fn proto_token(p: Proto) -> String {
         Proto::Lin => "LIN".into(),
         Proto::Can => "CAN".into(),
         other => other.name().chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_ascii_uppercase(),
+    }
+}
+
+fn trig_token(ui: &Ui) -> String {
+    match ui.m.trig_type {
+        TrigType::Edge => "EDGE".into(),
+        TrigType::Pulse => "PULS".into(),
+        TrigType::Slope => "SLOP".into(),
+        TrigType::Video => "VID".into(),
+        TrigType::Pattern => "PATT".into(),
+        TrigType::Duration => "DUR".into(),
+        TrigType::Timeout => "TIM".into(),
+        TrigType::Runt => "RUNT".into(),
+        TrigType::Window => "WIND".into(),
+        TrigType::Delay => "DEL".into(),
+        TrigType::SetupHold => "SET".into(),
+        TrigType::NthEdge => "NEDG".into(),
+        TrigType::Bus => proto_token(ui.m.dec_proto),
+    }
+}
+
+/// The search marks whatever trigger is already set. Only that name is legal.
+fn names_trigger(ui: &Ui, arg: &str) -> bool {
+    match ui.m.trig_type {
+        TrigType::Edge => kw(arg, "EDGE"),
+        TrigType::Pulse => kw(arg, "PULSe"),
+        TrigType::Slope => kw(arg, "SLOPe"),
+        TrigType::Video => kw(arg, "VIDeo"),
+        TrigType::Pattern => kw(arg, "PATTern"),
+        TrigType::Duration => kw(arg, "DURation"),
+        TrigType::Timeout => kw(arg, "TIMeout"),
+        TrigType::Runt => kw(arg, "RUNT"),
+        TrigType::Window => kw(arg, "WINDow") || kw(arg, "WINDows"),
+        TrigType::Delay => kw(arg, "DELay"),
+        TrigType::SetupHold => kw(arg, "SETup") || kw(arg, "SHOLd"),
+        TrigType::NthEdge => kw(arg, "NEDGe"),
+        TrigType::Bus => parse_proto(arg) == Some(ui.m.dec_proto),
     }
 }
 
@@ -699,7 +739,7 @@ impl Scpi {
         } else {
             eprintln!("oos-ui: SCPI port {} not available", port);
         }
-        Scpi { l, clients: Vec::new(), wav_src: WaveId::Ch(0), wav_fmt: 0, wav_mode: 0, wav_start: 1, wav_stop: 0, err: Vec::new(), esr: 128 }
+        Scpi { l, clients: Vec::new(), wav_src: WaveId::Ch(0), wav_fmt: 0, wav_mode: 0, wav_start: 1, wav_stop: 0, err: Vec::new(), esr: 128, search_at: 0 }
     }
 
     /// Queue a SCPI error and latch the matching *ESR bit. A query that fails still answers with this text,
@@ -1351,6 +1391,9 @@ impl Scpi {
         }
         if kw(n0, "TRIGger") && nodes.len() == 3 && kw(suffix(nodes[1]).0, "ZONE") {
             return self.trigger_zone(ui, suffix(nodes[1]).1, nodes[2], query, arg);
+        }
+        if kw(n0, "SEARch") {
+            return self.search_cmd(ui, &nodes[1..], query, arg);
         }
         let (channel, channel_n) = suffix(n0);
         if kw(channel, "CHANnel") && nodes.len() == 2 && kw(nodes[1], "ZERO") && !query {
@@ -2020,22 +2063,7 @@ impl Scpi {
     fn trigger_mode(&mut self, ui: &mut Ui, query: bool, arg: &str) -> Option<Vec<u8>> {
         let t = |s: &str| Some(s.as_bytes().to_vec());
         if query {
-            let name = match ui.m.trig_type {
-                TrigType::Edge => "EDGE",
-                TrigType::Pulse => "PULS",
-                TrigType::Slope => "SLOP",
-                TrigType::Video => "VID",
-                TrigType::Pattern => "PATT",
-                TrigType::Duration => "DUR",
-                TrigType::Timeout => "TIM",
-                TrigType::Runt => "RUNT",
-                TrigType::Window => "WIND",
-                TrigType::Delay => "DEL",
-                TrigType::SetupHold => "SET",
-                TrigType::NthEdge => "NEDG",
-                TrigType::Bus => return t(&proto_token(ui.m.dec_proto)),
-            };
-            return t(name);
+            return t(&trig_token(ui));
         }
         let kind = if kw(arg, "EDGE") {
             Some(TrigType::Edge)
@@ -2807,6 +2835,83 @@ impl Scpi {
             return self.pair_level(ui, TrigType::NthEdge, true, query, arg);
         }
         self.push_err(format!("-113,\"Undefined header\" :TRIGger:NEDGe:{}", which));
+        None
+    }
+
+    /// Mark events of the trigger already set. The screen has no separate search type.
+    fn search_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let which = n.first().copied().unwrap_or("");
+        if n.len() != 1 {
+            self.push_err(format!("-113,\"Undefined header\" :SEARch:{}", n.join(":")));
+            return None;
+        }
+        if kw(which, "STATe") {
+            if query {
+                return t(if ui.search_on { "1" } else { "0" });
+            }
+            let Some(on) = parse_bool(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.search_on = on;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "COUNt") && query {
+            let n = if ui.search_on { ui.search_events().len() } else { 0 };
+            return t(&n.to_string());
+        }
+        if kw(which, "MODE") {
+            if query {
+                return t(&trig_token(ui));
+            }
+            if names_trigger(ui, arg) {
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" search uses the trigger".into());
+            return None;
+        }
+        let events = if ui.search_on { ui.search_events() } else { Vec::new() };
+        if kw(which, "EVENt") {
+            if query {
+                let shown = if events.is_empty() { "0".to_string() } else { self.search_at.to_string() };
+                return t(&shown);
+            }
+            if !ui.search_on {
+                self.push_err("-221,\"Settings conflict\" search is off".into());
+                return None;
+            }
+            let Some(k) = arg.trim().parse::<u32>().ok().map(|k| if k == 0 { 1 } else { k }) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            if k < 1 || k as usize > events.len() {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            }
+            if ui.m.run == RunState::Run {
+                self.push_err("-221,\"Settings conflict\" stop the scope".into());
+                return None;
+            }
+            ui.go_to_time(events[k as usize - 1]);
+            self.search_at = k;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "VALue") && query {
+            if !ui.search_on || events.is_empty() {
+                self.push_err("-221,\"Settings conflict\" no search events".into());
+                return t("9.9E37");
+            }
+            let k = if arg.trim().is_empty() { self.search_at } else { arg.trim().parse::<u32>().unwrap_or(0) };
+            if k < 1 || k as usize > events.len() {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return t("9.9E37");
+            }
+            return t(&e(events[k as usize - 1]));
+        }
+        self.push_err(format!("-113,\"Undefined header\" :SEARch:{}", which));
         None
     }
 
@@ -5544,6 +5649,28 @@ mod tests {
         assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
         line(&mut s, &mut ui, &cv, ":TRIG:ZONE1:CLE");
         assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:ZONE1:STAT?"), "0");
+    }
+
+    #[test]
+    fn search_marks_the_trigger_events_and_can_go_to_one() {
+        let (mut s, mut ui, cv) = session();
+        line(&mut s, &mut ui, &cv, ":SEAR:STAT ON");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":SEAR:STAT?;:SEAR:COUN?;:SEAR:MODE?"), "1;0;EDGE");
+        line(&mut s, &mut ui, &cv, ":SEAR:MODE PULS");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"), "search uses the trigger");
+        ui.step(0.2);
+        let count: usize = line(&mut s, &mut ui, &cv, ":SEAR:COUN?").parse().unwrap();
+        assert!(count >= 1, "{count}");
+        let first: f64 = line(&mut s, &mut ui, &cv, ":SEAR:VAL? 1").parse().unwrap();
+        assert!(first.is_finite() && first.abs() < 1.0, "{first}");
+        line(&mut s, &mut ui, &cv, ":SEAR:EVEN 1");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "stop before going to an event");
+        line(&mut s, &mut ui, &cv, ":STOP");
+        line(&mut s, &mut ui, &cv, ":SEAR:EVEN 1");
+        assert!((ui.m.delay as f64 - first).abs() < 1e-6, "{} {}", ui.m.delay, first);
+        assert_eq!(line(&mut s, &mut ui, &cv, ":SEAR:EVEN?"), "1");
+        line(&mut s, &mut ui, &cv, ":SEAR:STAT OFF");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":SEAR:COUN?"), "0");
     }
 
     #[test]

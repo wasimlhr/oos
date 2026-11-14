@@ -815,7 +815,7 @@ pub struct Ui {
     /// position in `history` while viewing it (None = live)
     hist_pos: Option<usize>,
     /// mark all trigger events in the record (search)
-    search_on: bool,
+    pub(crate) search_on: bool,
     /// measurements per channel (oos-dsp) of the last record
     ana: [oos_dsp::measure::Analysis; NCH],
     /// measurements of each ref slot, from the stored samples (no front-end bandwidth)
@@ -4569,7 +4569,7 @@ impl Ui {
     }
 
     /// Search: times (s, relative to the trigger) of all events of the trigger condition in the record shown.
-    fn search_events(&self) -> Vec<f64> {
+    pub(crate) fn search_events(&self) -> Vec<f64> {
         let Some(rec) = &self.last[0] else { return Vec::new() };
         if !self.m.trig_channels().iter().enumerate().all(|(c, &u)| !u || !rec.ch[c].is_empty()) {
             return Vec::new();

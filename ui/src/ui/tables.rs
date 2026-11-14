@@ -159,7 +159,7 @@ impl Ui {
     }
 
     /// The view centred on a time of the record.
-    pub(super) fn go_to_time(&mut self, t: f64) {
+    pub(crate) fn go_to_time(&mut self, t: f64) {
         if self.m.run == RunState::Run {
             return self.toast("Stop the scope to go to an event");
         }
