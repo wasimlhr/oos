@@ -521,24 +521,36 @@ fn set_channel_scale(ch: &mut Channel, fine: bool, tip: f32) {
 /// Coarse 1-2-5 step when fine adjust is off. With it on, three significant digits, as a step and a factor.
 /// From the roll time base on, only the coarse steps remain.
 fn set_time_scale(m: &mut Model, want: f32) {
+    let old = m.time_per_div();
     let ts = tscales();
-    if !m.fine_t || !(want > 0.0) {
-        m.tscale = nearest(&ts, want.max(ts[0]));
-        m.tfine = 1.0;
-        return;
+    let (scale, fine) = if !m.fine_t || !(want > 0.0) {
+        (nearest(&ts, want.max(ts[0])), 1.0)
+    } else {
+        let raw = (want as f64).clamp(ts[0] as f64, ts[ts.len() - 1] as f64);
+        let q = 10f64.powf(raw.max(1e-12).log10().floor() - 2.0);
+        let snapped = (((raw / q).round() * q) as f32).clamp(ts[0], ts[ts.len() - 1]);
+        let i = ts.iter().position(|&t| t >= snapped * 0.99999).unwrap_or(ts.len() - 1);
+        if ts[i] as f64 >= board().roll_tdiv() * 0.999 {
+            (nearest(&ts, snapped), 1.0)
+        } else {
+            let f = snapped / ts[i];
+            (i, if (f - 1.0).abs() < 1e-5 { 1.0 } else { f })
+        }
+    };
+    m.tscale = scale;
+    m.tfine = fine;
+    if m.zscale > m.tscale {
+        m.zscale = m.tscale;
     }
-    let raw = (want as f64).clamp(ts[0] as f64, ts[ts.len() - 1] as f64);
-    let q = 10f64.powf(raw.max(1e-12).log10().floor() - 2.0);
-    let snapped = (((raw / q).round() * q) as f32).clamp(ts[0], ts[ts.len() - 1]);
-    let i = ts.iter().position(|&t| t >= snapped * 0.99999).unwrap_or(ts.len() - 1);
-    if ts[i] as f64 >= board().roll_tdiv() * 0.999 {
-        m.tscale = nearest(&ts, snapped);
-        m.tfine = 1.0;
-        return;
+    // The delay is the time in the middle. Keep the expand point where the screen keeps it.
+    let new = m.time_per_div();
+    let half = HDIV / 2.0;
+    match m.h_expand {
+        HExpand::Center => {}
+        HExpand::Left => m.delay -= half * (old - new),
+        HExpand::Right => m.delay += half * (old - new),
+        HExpand::Trigger => m.delay *= new / old,
     }
-    let f = snapped / ts[i];
-    m.tscale = i;
-    m.tfine = if (f - 1.0).abs() < 1e-5 { 1.0 } else { f };
 }
 
 fn nearest(ladder: &[f32], v: f32) -> usize {
@@ -4661,6 +4673,21 @@ mod tests {
         line(&mut s, &mut ui, &cv, ":TIM:VERN OFF");
         let coarse_t: f64 = line(&mut s, &mut ui, &cv, ":TIM:SCAL?").parse().unwrap();
         assert!((coarse_t - 2e-3).abs() < 1e-6, "vernier off returns to the coarse time base, {coarse_t}");
+        line(&mut s, &mut ui, &cv, ":TIM:SCAL 1e-3;:TIM:OFFS 1e-3;:TIM:HREF:MODE TRIG;:TIM:SCAL 2e-3");
+        let trig: f64 = line(&mut s, &mut ui, &cv, ":TIM:OFFS?").parse().unwrap();
+        assert!((trig - 2e-3).abs() < 1e-6, "trigger expand scales the delay, {trig}");
+        line(&mut s, &mut ui, &cv, ":TIM:HREF:MODE CENT;:TIM:SCAL 1e-3;:TIM:HREF:MODE LB;:TIM:OFFS 0;:TIM:SCAL 2e-3");
+        let left: f64 = line(&mut s, &mut ui, &cv, ":TIM:OFFS?").parse().unwrap();
+        assert!((left - 5e-3).abs() < 1e-6, "left expand keeps the left edge, {left}");
+        line(&mut s, &mut ui, &cv, ":TIM:HREF:MODE CENT;:TIM:SCAL 1e-3;:TIM:HREF:MODE RB;:TIM:OFFS 0;:TIM:SCAL 2e-3");
+        let right: f64 = line(&mut s, &mut ui, &cv, ":TIM:OFFS?").parse().unwrap();
+        assert!((right + 5e-3).abs() < 1e-6, "right expand keeps the right edge, {right}");
+        line(&mut s, &mut ui, &cv, ":TIM:HREF:MODE CENT;:TIM:SCAL 1e-3;:TIM:OFFS 4e-3;:TIM:SCAL 2e-3");
+        let mid: f64 = line(&mut s, &mut ui, &cv, ":TIM:OFFS?").parse().unwrap();
+        assert!((mid - 4e-3).abs() < 1e-6, "center expand leaves the delay, {mid}");
+        line(&mut s, &mut ui, &cv, ":TIM:DEL:ENAB ON;:TIM:DEL:SCAL 1e-4;:TIM:SCAL 1e-6");
+        let zoom: f64 = line(&mut s, &mut ui, &cv, ":TIM:DEL:SCAL?").parse().unwrap();
+        assert!((zoom - 1e-6).abs() < 1e-9, "the zoom window stays at least as fast as the main scale, {zoom}");
 
         line(&mut s, &mut ui, &cv, "*CLS;:MEAS:THR:TYPE ABS;:MEAS:AREA ZOOM");
         let refused = line(&mut s, &mut ui, &cv, ":SYST:ERR?");
