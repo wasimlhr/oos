@@ -553,6 +553,11 @@ fn set_time_scale(m: &mut Model, want: f32) {
     }
 }
 
+fn clamp_channel_offset(ch: &mut Channel) {
+    let max = ch.offset_max();
+    ch.offset = ch.offset.clamp(-max, max);
+}
+
 fn nearest(ladder: &[f32], v: f32) -> usize {
     let mut best = 0;
     for (i, &x) in ladder.iter().enumerate() {
@@ -871,6 +876,7 @@ impl Scpi {
                             m.fine_v = on;
                             if !on {
                                 m.ch[c].vfine = 1.0;
+                                clamp_channel_offset(&mut m.ch[c]);
                             }
                             Some(None)
                         }
@@ -914,11 +920,14 @@ impl Scpi {
                     if expand_gnd && old > 0.0 {
                         ch.offset *= ch.volts_per_div() / old;
                     }
+                    clamp_channel_offset(ch);
                 } else if kw(n1, "OFFSet") || kw(n1, "POSition") {
                     if query {
                         return Some(t(&e(ch.offset as f64)));
                     }
-                    ch.offset = num(arg)?;
+                    let Some(v) = num(arg) else { return None };
+                    ch.offset = v;
+                    clamp_channel_offset(ch);
                 } else if kw(n1, "UNITs") {
                     if query {
                         return Some(t(match ch.unit {
@@ -976,6 +985,7 @@ impl Scpi {
                         return Some(t(&e(ch.probe as f64)));
                     }
                     ch.probe = num(arg).filter(|&p| p > 0.0)?;
+                    clamp_channel_offset(ch);
                 } else if kw(n1, "INVert") {
                     if query {
                         return Some(t(if ch.invert { "1" } else { "0" }));
@@ -4667,6 +4677,15 @@ mod tests {
         line(&mut s, &mut ui, &cv, ":CHAN1:VERN OFF");
         let coarse: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:SCAL?").parse().unwrap();
         assert!((coarse - 0.1).abs() < 1e-4, "vernier off returns to the coarse step, {coarse}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:SCAL 0.01;:CHAN1:OFFS 5");
+        let hi: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:OFFS?").parse().unwrap();
+        assert!((hi - 2.0).abs() < 1e-4, "offset clamps to what 10 mV/div can reach, {hi}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:OFFS -9");
+        let lo: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:OFFS?").parse().unwrap();
+        assert!((lo + 2.0).abs() < 1e-4, "a negative offset clamps the same way, {lo}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:OFFS 1");
+        let kept: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:OFFS?").parse().unwrap();
+        assert!((kept - 1.0).abs() < 1e-4, "an offset inside the range stays, {kept}");
         line(&mut s, &mut ui, &cv, ":TIM:VERN ON;:TIM:SCAL 1.5e-3");
         let fine_t: f64 = line(&mut s, &mut ui, &cv, ":TIM:SCAL?").parse().unwrap();
         assert!((fine_t - 1.5e-3).abs() < 1e-6, "fine time base {fine_t}");
