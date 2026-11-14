@@ -6226,11 +6226,11 @@ impl Ui {
                     self.m.zones[self.zone_sel] = crate::zone::Zone { src: self.m.zones[self.zone_sel].src, ..Default::default() };
                 }
                 Item::StoreSaveSetup => {
-                    let p = self.setup_path();
-                    let r = crate::store::write(&p, crate::store::setup_text(&self.m).as_bytes());
-                    self.toast_saved(&p, r);
+                    let _ = self.save_setup_named("");
                 }
-                Item::StoreRecall => self.recall_setup(),
+                Item::StoreRecall => {
+                    let _ = self.load_setup_named("");
+                }
                 Item::StoreCsv => match &self.last[0] {
                     Some(rec) => {
                         let p = crate::store::next_name(&self.save_dir(), "wave", "csv");
@@ -6359,18 +6359,57 @@ impl Ui {
         }
     }
 
-    /// File of the current setup slot: a setup is small and has to survive a power cycle, so the default storage directory
-    /// in RAM is not used for it when OOS's data partition is there.
-    fn setup_path(&self) -> std::path::PathBuf {
-        let keep = std::path::Path::new("/oos/setups");
-        let dir = if self.store_dir == std::path::Path::new(crate::store::DEFAULT_DIR) && keep.is_dir() { keep } else { self.store_dir.as_path() };
-        dir.join(format!("setup{}.txt", self.store_slot))
+    /// The setup file the Storage menu uses. An empty name is the current slot (`setupN.txt`). A number 1 to 9 selects
+    /// that slot. A `.stp` or `.txt` name is that file, beside the setups when the path is relative. `slot` and `suffix`
+    /// are the refusals.
+    fn setup_file(&mut self, path: &str) -> Result<std::path::PathBuf, String> {
+        let raw = path.trim().trim_matches('"');
+        if raw.is_empty() {
+            return Ok(self.setup_path());
+        }
+        if let Ok(slot) = raw.parse::<u32>() {
+            if !(1..=9).contains(&slot) {
+                return Err("slot".into());
+            }
+            self.store_slot = slot;
+            return Ok(self.setup_path());
+        }
+        let named = std::path::Path::new(raw);
+        let ext = named.extension().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase();
+        if ext != "stp" && ext != "txt" {
+            return Err("suffix".into());
+        }
+        Ok(if named.is_absolute() {
+            named.to_path_buf()
+        } else {
+            self.setup_path().parent().map(|d| d.join(named)).unwrap_or_else(|| named.to_path_buf())
+        })
     }
 
-    /// Loads setup<slot>.txt of the storage directory; the acquisition state (run / stop) stays as it is.
-    fn recall_setup(&mut self) {
-        let p = self.setup_path();
-        let parsed = std::fs::read_to_string(&p).map_err(|e| e.to_string()).and_then(|t| crate::store::parse_setup(&t));
+    /// Save setup. An empty name is that button. The bytes are the setup file the menu writes.
+    pub(crate) fn save_setup_named(&mut self, path: &str) -> Result<std::path::PathBuf, String> {
+        let p = self.setup_file(path)?;
+        match crate::store::write(&p, crate::store::setup_text(&self.m).as_bytes()) {
+            Ok(()) => {
+                self.toast_saved(&p, Ok(()));
+                Ok(p)
+            }
+            Err(e) => {
+                let message = e.to_string();
+                self.toast_saved(&p, Err(e));
+                Err(message)
+            }
+        }
+    }
+
+    /// Recall setup. An empty name is that button. Run and stop stay as they are. `missing` means the file is not there.
+    pub(crate) fn load_setup_named(&mut self, path: &str) -> Result<(), String> {
+        let p = self.setup_file(path)?;
+        let parsed = match std::fs::read_to_string(&p) {
+            Ok(text) => crate::store::parse_setup(&text),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err("missing".into()),
+            Err(e) => Err(e.to_string()),
+        };
         match parsed {
             Ok(mut m) => {
                 (m.run, m.status) = (self.m.run, self.m.status);
@@ -6390,9 +6429,21 @@ impl Ui {
                 self.dirty_map = true;
                 self.mstat.clear();
                 self.toast(&format!("Recalled {}", crate::store::file_name(&p)));
+                Ok(())
             }
-            Err(e) => self.toast(&format!("Recall failed: {}", e)),
+            Err(e) => {
+                self.toast(&format!("Recall failed: {}", if e == "missing" { "no file" } else { &e }));
+                Err(e)
+            }
         }
+    }
+
+    /// File of the current setup slot: a setup is small and has to survive a power cycle, so the default storage directory
+    /// in RAM is not used for it when OOS's data partition is there.
+    fn setup_path(&self) -> std::path::PathBuf {
+        let keep = std::path::Path::new("/oos/setups");
+        let dir = if self.store_dir == std::path::Path::new(crate::store::DEFAULT_DIR) && keep.is_dir() { keep } else { self.store_dir.as_path() };
+        dir.join(format!("setup{}.txt", self.store_slot))
     }
 
     fn level_50(&mut self) {

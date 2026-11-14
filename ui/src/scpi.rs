@@ -34,6 +34,7 @@
 //! :MAGnetic:ITEM? <item>[,V,I], :INVerter:ITEM? <item>[,src...], :DPT:ITEM? <item>[,V,I[,G]], :BANDwidth:ITEM? <item>[,src],
 //! :WAVeform:SOURce CHANn|Rn|MODE NORM/MAX/RAW|FORMat BYTE/WORD/ASC|STARt|STOP|POINts|DATA?|PREamble?,
 //! :SAVE:WAVeform <file.csv|file.bin> (the Storage menu's screen waveform; an empty path is the CSV button),
+//! :SAVE:SETup [slot|file.stp] and :LOAD:SETup [slot|file.stp] (the Storage menu's setup; an empty path is the current slot),
 //! :DISPlay:DATA? [BMP|PNG], :DISPlay:TYPE|GRADing:TIME|WBRightness|GBRightness|GRID|RULers|COLor,
 //! :REFerence:SLOT R1..R10, :CURRent, :SOURce, :VSCale, :VOFFset, :COLor, :RESet, :LABel:CONTent, :LOAD <file>, :IMPort [file], :EXPort [file], :SAVE, :SHOW ON|OFF, :CLEar,
 //! :MEASure:SETup:MAX|MIN|MID (the middle stays 50), :MEASure:THReshold:TYPE PERCent, :MEASure:THReshold:DEFault, :MEASure:SETup:PSA|PSB|DSA|DSB,
@@ -1755,6 +1756,9 @@ impl Scpi {
         if kw(n0, "SAVE") {
             return self.save_cmd(ui, &nodes[1..], query, arg);
         }
+        if kw(n0, "LOAD") {
+            return self.load_cmd(ui, &nodes[1..], query, arg);
+        }
         if kw(n0, "REFerence") {
             return self.ref_cmd(ui, &nodes[1..], query, arg);
         }
@@ -3264,7 +3268,8 @@ impl Scpi {
     }
 
     /// `:SAVE:WAVeform`: the on-screen record, CSV or binary, the same bytes as the Storage menu.
-    fn save_cmd(&mut self, ui: &Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+    /// `:SAVE:SETup`: the setup file that menu writes. An empty name is the current slot.
+    fn save_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
         if !query && n.len() == 1 && kw(n[0], "WAVeform") {
             return match ui.save_waveform_named(arg) {
                 Ok(_) => None,
@@ -3282,8 +3287,50 @@ impl Scpi {
                 }
             };
         }
+        if n.len() == 1 && kw(n[0], "SETup") {
+            if query {
+                self.push_err("-113,\"Undefined header\" :SAVE:SETup?".into());
+                return None;
+            }
+            return self.setup_result(ui.save_setup_named(arg));
+        }
         self.push_err(format!("-113,\"Undefined header\" :SAVE:{}", n.join(":")));
         None
+    }
+
+    /// `:LOAD:SETup`: the Recall setup button. An empty name is the current slot. A missing file is -256.
+    fn load_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        if n.len() == 1 && kw(n[0], "SETup") {
+            if query {
+                self.push_err("-113,\"Undefined header\" :LOAD:SETup?".into());
+                return None;
+            }
+            return self.setup_result(ui.load_setup_named(arg).map(|()| std::path::PathBuf::new()));
+        }
+        self.push_err(format!("-113,\"Undefined header\" :LOAD:{}", n.join(":")));
+        None
+    }
+
+    fn setup_result(&mut self, r: Result<std::path::PathBuf, String>) -> Option<Vec<u8>> {
+        match r {
+            Ok(_) => None,
+            Err(e) if e == "missing" => {
+                self.push_err("-256,\"File name not found\"".into());
+                None
+            }
+            Err(e) if e == "slot" => {
+                self.push_err("-224,\"Illegal parameter value\" slot 1 to 9".into());
+                None
+            }
+            Err(e) if e == "suffix" => {
+                self.push_err("-224,\"Illegal parameter value\" stp or txt".into());
+                None
+            }
+            Err(e) => {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", e));
+                None
+            }
+        }
     }
 
     /// Upper (`high`) or lower threshold, as a percent of the waveform, the same pair `:MEASure:REFS` sets.
@@ -6525,6 +6572,32 @@ mod tests {
         let off: f64 = line(&mut s, &mut ui, &cv, ":MATH2:OFFS?").parse().unwrap();
         let kept: f64 = line(&mut s, &mut ui, &cv, ":MATH1:SCAL?").parse().unwrap();
         assert!((db - 10.0).abs() < 1e-6 && off.abs() < 1e-6 && (kept - scale).abs() < 1e-9, "{db} {off} {kept}");
+    }
+
+    #[test]
+    fn a_setup_saves_and_recalls_the_storage_slot() {
+        let dir = std::env::temp_dir().join(format!("oos-scpi-setup-{}", std::process::id()));
+        let (mut s, mut ui, cv) = session();
+        ui.store_dir = dir.clone();
+        let scale = line(&mut s, &mut ui, &cv, ":TIM:SCAL?");
+        line(&mut s, &mut ui, &cv, ":CHAN2:DISP ON;:SAVE:SET");
+        let text = std::fs::read_to_string(dir.join("setup1.txt")).unwrap();
+        assert!(text.contains("ch2.on = true"), "{text}");
+        line(&mut s, &mut ui, &cv, ":CHAN2:DISP OFF;:TIM:SCAL 5e-3");
+        ui.m.run = RunState::Stop;
+        line(&mut s, &mut ui, &cv, ":LOAD:SET");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CHAN2:DISP?;:TIM:SCAL?"), format!("1;{scale}"));
+        assert_eq!(ui.m.run, RunState::Stop);
+        line(&mut s, &mut ui, &cv, ":SAVE:SET 2");
+        assert!(dir.join("setup2.txt").is_file());
+        line(&mut s, &mut ui, &cv, ":LOAD:SET 8");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-256"));
+        line(&mut s, &mut ui, &cv, ":SAVE:SET note.stp");
+        assert!(std::fs::read_to_string(dir.join("note.stp")).unwrap().starts_with("# OOS setup"));
+        line(&mut s, &mut ui, &cv, ":SAVE:SET note.csv");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        assert!(line(&mut s, &mut ui, &cv, ":SAVE:SET?").starts_with("-113"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

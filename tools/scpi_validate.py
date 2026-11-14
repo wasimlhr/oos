@@ -420,6 +420,12 @@ def validate(oos, result):
     result.numeric("math autoscale", float(oos.query(":MATH1:SCALe?")), 10, relative=1e-6)
     result.numeric("math offset after autoscale", float(oos.query(":MATH1:OFFSet?")), 0, absolute=1e-6)
     oos.write(":MATH1:DISPlay OFF")
+    oos.write(':SAVE:SETup "/tmp/oos-scpi-setup.stp"')
+    result.equal("setup saved", oos.query(":SYSTem:ERRor?").split(",")[0], "0")
+    oos.write(':LOAD:SETup "/tmp/oos-scpi-setup.stp"')
+    result.equal("setup loaded", oos.query(":SYSTem:ERRor?").split(",")[0], "0")
+    oos.write(":SAVE:SETup bad.csv")
+    result.equal("setup suffix refused", oos.query(":SYSTem:ERRor?").split(",")[0], "-224")
     lane = oos.query(":LA:SIZE?")
     if not lane.startswith("-241"):
         result.equal("lane height", str(lane in ("SMAL", "MED", "LARG")), "True")
