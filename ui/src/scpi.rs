@@ -499,6 +499,48 @@ fn num(s: &str) -> Option<f32> {
     s.trim().parse::<f32>().ok().filter(|v| v.is_finite())
 }
 
+/// Coarse 1-2-5 step when fine adjust is off. With it on, the same row the vertical knob walks:
+/// the calibration ladder from 100 µV to 10 V, stored as a coarse step and a factor.
+fn set_channel_scale(ch: &mut Channel, fine: bool, tip: f32) {
+    let bnc = tip / ch.probe.max(1e-12);
+    if !fine || !(bnc > 0.0) {
+        ch.vscale = nearest(&VSCALES, bnc.max(VSCALES[0]));
+        ch.vfine = 1.0;
+        return;
+    }
+    let rows = board().vscale_steps_nv();
+    let nv = (bnc as f64 * 1e9).round() as i64;
+    let at = rows.iter().enumerate().min_by_key(|(_, k)| (nv - **k).abs()).map(|(i, _)| i).unwrap_or(0);
+    let want = (rows[at] as f64 * 1e-9) as f32;
+    let i = VSCALES.iter().rposition(|&s| s <= want * 1.000001).unwrap_or(0);
+    let f = want / VSCALES[i];
+    ch.vscale = i;
+    ch.vfine = if (f - 1.0).abs() < 1e-6 { 1.0 } else { f };
+}
+
+/// Coarse 1-2-5 step when fine adjust is off. With it on, three significant digits, as a step and a factor.
+/// From the roll time base on, only the coarse steps remain.
+fn set_time_scale(m: &mut Model, want: f32) {
+    let ts = tscales();
+    if !m.fine_t || !(want > 0.0) {
+        m.tscale = nearest(&ts, want.max(ts[0]));
+        m.tfine = 1.0;
+        return;
+    }
+    let raw = (want as f64).clamp(ts[0] as f64, ts[ts.len() - 1] as f64);
+    let q = 10f64.powf(raw.max(1e-12).log10().floor() - 2.0);
+    let snapped = (((raw / q).round() * q) as f32).clamp(ts[0], ts[ts.len() - 1]);
+    let i = ts.iter().position(|&t| t >= snapped * 0.99999).unwrap_or(ts.len() - 1);
+    if ts[i] as f64 >= board().roll_tdiv() * 0.999 {
+        m.tscale = nearest(&ts, snapped);
+        m.tfine = 1.0;
+        return;
+    }
+    let f = snapped / ts[i];
+    m.tscale = i;
+    m.tfine = if (f - 1.0).abs() < 1e-5 { 1.0 } else { f };
+}
+
 fn nearest(ladder: &[f32], v: f32) -> usize {
     let mut best = 0;
     for (i, &x) in ladder.iter().enumerate() {
@@ -842,6 +884,7 @@ impl Scpi {
                     return Some(None);
                 }
                 let expand_gnd = m.v_expand_gnd;
+                let fine_v = m.fine_v;
                 let slow_deskew = m.time_per_div() > 10e-6;
                 let ch = &mut m.ch[c];
                 if kw(n1, "DISPlay") {
@@ -854,8 +897,8 @@ impl Scpi {
                         return Some(t(&e(ch.volts_per_div() as f64)));
                     }
                     let old = ch.volts_per_div();
-                    ch.vscale = nearest(&VSCALES, num(arg)? / ch.probe);
-                    ch.vfine = 1.0;
+                    let Some(tip) = num(arg) else { return None };
+                    set_channel_scale(ch, fine_v, tip);
                     if expand_gnd && old > 0.0 {
                         ch.offset *= ch.volts_per_div() / old;
                     }
@@ -967,8 +1010,8 @@ impl Scpi {
                     if query {
                         return Some(t(&e(m.time_per_div() as f64)));
                     }
-                    m.tscale = nearest(&tscales(), num(arg)?);
-                    m.tfine = 1.0;
+                    let Some(want) = num(arg) else { return None };
+                    set_time_scale(m, want);
                     return Some(None);
                 }
                 if kw(last, "OFFSet") || kw(last, "POSition") {
@@ -4606,6 +4649,19 @@ mod tests {
         assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224,"), "the middle stays at half the amplitude");
         line(&mut s, &mut ui, &cv, ":MEAS:THR:DEF");
         assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:SET:MIN?;:MEAS:SET:MAX?;:MEAS:THR:TYPE?;:MEAS:AREA?"), "10;90;PERC;MAIN");
+        line(&mut s, &mut ui, &cv, "*CLS;:CHAN1:VERN ON;:CHAN1:SCAL 0.12");
+        let fine: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:SCAL?").parse().unwrap();
+        assert!((fine - 0.12).abs() < 1e-4, "fine vertical scale {fine}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:VERN OFF");
+        let coarse: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:SCAL?").parse().unwrap();
+        assert!((coarse - 0.1).abs() < 1e-4, "vernier off returns to the coarse step, {coarse}");
+        line(&mut s, &mut ui, &cv, ":TIM:VERN ON;:TIM:SCAL 1.5e-3");
+        let fine_t: f64 = line(&mut s, &mut ui, &cv, ":TIM:SCAL?").parse().unwrap();
+        assert!((fine_t - 1.5e-3).abs() < 1e-6, "fine time base {fine_t}");
+        line(&mut s, &mut ui, &cv, ":TIM:VERN OFF");
+        let coarse_t: f64 = line(&mut s, &mut ui, &cv, ":TIM:SCAL?").parse().unwrap();
+        assert!((coarse_t - 2e-3).abs() < 1e-6, "vernier off returns to the coarse time base, {coarse_t}");
+
         line(&mut s, &mut ui, &cv, "*CLS;:MEAS:THR:TYPE ABS;:MEAS:AREA ZOOM");
         let refused = line(&mut s, &mut ui, &cv, ":SYST:ERR?");
         assert!(refused.starts_with("-224,"), "{refused}");
