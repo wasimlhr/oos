@@ -815,7 +815,7 @@ pub struct Ui {
     /// position in `history` while viewing it (None = live)
     hist_pos: Option<usize>,
     /// mark all trigger events in the record (search)
-    search_on: bool,
+    pub(crate) search_on: bool,
     /// measurements per channel (oos-dsp) of the last record
     ana: [oos_dsp::measure::Analysis; NCH],
     /// measurements of each ref slot, from the stored samples (no front-end bandwidth)
@@ -1002,6 +1002,20 @@ struct StripLine {
     col: Rgb,
     /// the name lines up with the names under a channel pill
     align: bool,
+}
+
+/// A 1-based inclusive page. `stop == 0` means the last sample. A start past the end is an empty page.
+fn copy_page(v: &[f32], dt: f64, t0: f64, start: u64, stop: u64) -> (Vec<f32>, f64, f64) {
+    let n = v.len() as u64;
+    if n == 0 || start > n {
+        return (Vec::new(), dt, t0);
+    }
+    let a = start.max(1);
+    let b = if stop == 0 { n } else { stop.clamp(a, n) };
+    let lo = (a - 1) as usize;
+    let hi = b as usize;
+    let page = v[lo..hi].iter().map(|x| if x.is_finite() { *x } else { 0.0 }).collect();
+    (page, dt, t0 + lo as f64 * dt)
 }
 
 impl Ui {
@@ -1758,9 +1772,54 @@ impl Ui {
         self.last[0].as_ref().map(|r| r.ch[c].iter().map(|x| if x.is_finite() { *x } else { 0.0 }).collect()).unwrap_or_default()
     }
 
+    /// The samples a `:WAVeform` read uses. `memory` is RAW, or MAXimum while stopped: the deep record when the
+    /// acquisition kept one, otherwise the screen record.
+    fn channel_view(&self, c: usize, memory: bool) -> Option<(&[f32], f64, f64)> {
+        let rec = self.last[0].as_ref()?;
+        if memory {
+            if let Some(raw) = rec.raw.as_ref().filter(|r| !r.frame.envelope) {
+                if let Some(v) = raw.frame.ch.get(c) {
+                    if raw.i1 <= v.len() && raw.i1 > raw.i0 {
+                        return Some((&v[raw.i0..raw.i1], raw.frame.dt, raw.t0));
+                    }
+                }
+            }
+        }
+        let v = rec.ch.get(c)?;
+        (!v.is_empty()).then_some((v.as_slice(), rec.dt, rec.t0))
+    }
+
+    /// How many points `channel_page` can walk. Zero when that source has no record.
+    pub fn channel_points(&self, c: usize, memory: bool) -> usize {
+        self.channel_view(c, memory).map(|(v, _, _)| v.len()).unwrap_or(0)
+    }
+
+    /// `(dt, t0)` of that same record. None when it is empty.
+    pub fn channel_origin(&self, c: usize, memory: bool) -> Option<(f64, f64)> {
+        self.channel_view(c, memory).map(|(_, dt, t0)| (dt, t0))
+    }
+
+    /// One page of a channel, 1-based inclusive, the same numbering as `:WAVeform:STARt` and `:WAVeform:STOP`.
+    /// `stop == 0` reads through the last point. The time is the first sample of the page.
+    pub fn channel_page(&self, c: usize, memory: bool, start: u64, stop: u64) -> Option<(Vec<f32>, f64, f64)> {
+        let (v, dt, t0) = self.channel_view(c, memory)?;
+        Some(copy_page(v, dt, t0, start, stop))
+    }
+
     /// Samples of a reference slot, finite volts. Empty when that slot holds nothing.
     pub(crate) fn ref_volts(&self, slot: usize) -> Vec<f32> {
-        self.refs.get(slot).and_then(|r| r.as_ref()).map(|r| r.v.iter().map(|x| if x.is_finite() { *x } else { 0.0 }).collect()).unwrap_or_default()
+        self.ref_page(slot, 1, 0).map(|(v, _, _, _, _)| v).unwrap_or_default()
+    }
+
+    /// One page of a reference slot. `None` when the slot is empty. Volts per division and offset travel with it.
+    pub fn ref_page(&self, slot: usize, start: u64, stop: u64) -> Option<(Vec<f32>, f64, f64, f64, f64)> {
+        let r = self.refs.get(slot)?.as_ref()?;
+        if r.v.len() < 2 || !(r.dt > 0.0) {
+            return None;
+        }
+        let (page, dt, t0) = copy_page(&r.v, r.dt, r.t0, start, stop);
+        let vpd = if r.vpd > 0.0 { r.vpd as f64 } else { 1.0 };
+        Some((page, dt, t0, vpd, r.offset as f64))
     }
 
     /// (points, dt, t0, volts per division, offset) of a slot that has a record.
@@ -2855,8 +2914,8 @@ impl Ui {
         self.math_wave_of(self.m.math_sel)
     }
 
-    /// Picks the math scale so that the waveform spans about 6 divisions.
-    fn math_autoscale(&mut self) {
+    /// Picks the math scale so that the waveform spans about 6 divisions. The Auto scale button and `:MATH<n>:RESet`.
+    pub(crate) fn math_autoscale(&mut self) {
         if self.m.math == MathOp::Fft {
             self.m.math_scale = 3;
             self.m.math_offset = 0.0;
@@ -3379,10 +3438,13 @@ impl Ui {
                     let x = a.x + (frac * a.w as f32) as i32;
                     cv.dashed_vline(x, a.y, a.y + a.h - 1, 4, 3, CURSOR);
                     tagbox(cv, x + 2, a.y + a.h - 36, name);
-                    // tracking: a mark where the cursor meets the trace
-                    if let (CursorMode::Track, Some(v)) = (self.m.cursor, self.wave_at(t)) {
-                        let y = self.y_of_volts(self.m.active, v);
-                        cv.dashed_hline(x - 10, x + 10, y, 2, 2, CURSOR);
+                    // tracking: a mark where the cursor meets its source. X2 can follow another channel.
+                    if self.m.cursor == CursorMode::Track {
+                        let c = if name == "X1" { self.m.active } else { self.m.cur_b_ch.unwrap_or(self.m.active) };
+                        if let Some(v) = self.wave_at_ch(c, t) {
+                            let y = self.y_of_volts(c, v);
+                            cv.dashed_hline(x - 10, x + 10, y, 2, 2, CURSOR);
+                        }
                     }
                 }
             }
@@ -3416,17 +3478,18 @@ impl Ui {
             }
             CursorMode::Track => {
                 let (ta, tb) = self.cursor_times();
-                let y = |t: f64| self.wave_at(t);
-                let u = self.m.unit(self.m.active);
-                let txt = |v: Option<f32>| v.map_or("----".to_string(), |v| si(v as f64, u));
-                let dy = y(ta).zip(y(tb)).map(|(a, b)| b - a);
+                let (ca, cb) = (self.m.active, self.m.cur_b_ch.unwrap_or(self.m.active));
+                let (ya, yb) = (self.wave_at_ch(ca, ta), self.wave_at_ch(cb, tb));
+                let (ua, ub) = (self.m.unit(ca), self.m.unit(cb));
+                let txt = |v: Option<f32>, u: &str| v.map_or("----".to_string(), |v| si(v as f64, u));
+                let dy = ya.zip(yb).map(|(a, b)| b - a);
                 vec![
                     ("X1".into(), si(ta, "s")),
-                    ("Y1".into(), txt(y(ta))),
+                    ("Y1".into(), txt(ya, ua)),
                     ("X2".into(), si(tb, "s")),
-                    ("Y2".into(), txt(y(tb))),
+                    ("Y2".into(), txt(yb, ub)),
                     ("\u{394}X".into(), si(tb - ta, "s")),
-                    ("\u{394}Y".into(), txt(dy)),
+                    ("\u{394}Y".into(), txt(dy, if ua == ub { ua } else { "" })),
                 ]
             }
             CursorMode::Time => {
@@ -4429,11 +4492,37 @@ impl Ui {
         g
     }
 
+    /// How many stored frames can be shown. Frame 1 is the oldest.
+    pub(crate) fn history_len(&self) -> usize {
+        self.history.len()
+    }
+
+    /// The frame on screen, 1-based. Live is the newest stored frame.
+    pub(crate) fn history_frame(&self) -> usize {
+        self.hist_pos.map(|i| i + 1).unwrap_or(self.history.len())
+    }
+
+    /// Shows frame `frame` (1-based) and stops. Frame 1 is the oldest.
+    pub(crate) fn history_show(&mut self, frame: usize) -> bool {
+        let n = self.history.len();
+        if frame == 0 || frame > n {
+            return false;
+        }
+        self.m.run = RunState::Stop;
+        let i = frame - 1;
+        self.hist_pos = Some(i);
+        self.last[0] = Some(self.history[i].clone());
+        self.measure_last();
+        self.toast(&format!("History {}/{}", frame, n));
+        true
+    }
+
     /// Shows record `hist_pos + d` of the history (d = 0: the newest), stopping the acquisition.
-    fn history_step(&mut self, d: i32) {
+    pub(crate) fn history_step(&mut self, d: i32) -> bool {
         let n = self.history.len();
         if n == 0 {
-            return self.toast("History empty");
+            self.toast("History empty");
+            return false;
         }
         self.m.run = RunState::Stop;
         let cur = self.hist_pos.unwrap_or(n - 1) as i32;
@@ -4442,6 +4531,7 @@ impl Ui {
         self.last[0] = Some(self.history[i].clone());
         self.measure_last();
         self.toast(&format!("History {}/{}", i + 1, n));
+        true
     }
 
     /// Recomputes the measurements of the record shown, and of every loaded ref.
@@ -4506,7 +4596,7 @@ impl Ui {
     }
 
     /// Search: times (s, relative to the trigger) of all events of the trigger condition in the record shown.
-    fn search_events(&self) -> Vec<f64> {
+    pub(crate) fn search_events(&self) -> Vec<f64> {
         let Some(rec) = &self.last[0] else { return Vec::new() };
         if !self.m.trig_channels().iter().enumerate().all(|(c, &u)| !u || !rec.ch[c].is_empty()) {
             return Vec::new();
@@ -6136,11 +6226,11 @@ impl Ui {
                     self.m.zones[self.zone_sel] = crate::zone::Zone { src: self.m.zones[self.zone_sel].src, ..Default::default() };
                 }
                 Item::StoreSaveSetup => {
-                    let p = self.setup_path();
-                    let r = crate::store::write(&p, crate::store::setup_text(&self.m).as_bytes());
-                    self.toast_saved(&p, r);
+                    let _ = self.save_setup_named("");
                 }
-                Item::StoreRecall => self.recall_setup(),
+                Item::StoreRecall => {
+                    let _ = self.load_setup_named("");
+                }
                 Item::StoreCsv => match &self.last[0] {
                     Some(rec) => {
                         let p = crate::store::next_name(&self.save_dir(), "wave", "csv");
@@ -6269,18 +6359,57 @@ impl Ui {
         }
     }
 
-    /// File of the current setup slot: a setup is small and has to survive a power cycle, so the default storage directory
-    /// in RAM is not used for it when OOS's data partition is there.
-    fn setup_path(&self) -> std::path::PathBuf {
-        let keep = std::path::Path::new("/oos/setups");
-        let dir = if self.store_dir == std::path::Path::new(crate::store::DEFAULT_DIR) && keep.is_dir() { keep } else { self.store_dir.as_path() };
-        dir.join(format!("setup{}.txt", self.store_slot))
+    /// The setup file the Storage menu uses. An empty name is the current slot (`setupN.txt`). A number 1 to 9 selects
+    /// that slot. A `.stp` or `.txt` name is that file, beside the setups when the path is relative. `slot` and `suffix`
+    /// are the refusals.
+    fn setup_file(&mut self, path: &str) -> Result<std::path::PathBuf, String> {
+        let raw = path.trim().trim_matches('"');
+        if raw.is_empty() {
+            return Ok(self.setup_path());
+        }
+        if let Ok(slot) = raw.parse::<u32>() {
+            if !(1..=9).contains(&slot) {
+                return Err("slot".into());
+            }
+            self.store_slot = slot;
+            return Ok(self.setup_path());
+        }
+        let named = std::path::Path::new(raw);
+        let ext = named.extension().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase();
+        if ext != "stp" && ext != "txt" {
+            return Err("suffix".into());
+        }
+        Ok(if named.is_absolute() {
+            named.to_path_buf()
+        } else {
+            self.setup_path().parent().map(|d| d.join(named)).unwrap_or_else(|| named.to_path_buf())
+        })
     }
 
-    /// Loads setup<slot>.txt of the storage directory; the acquisition state (run / stop) stays as it is.
-    fn recall_setup(&mut self) {
-        let p = self.setup_path();
-        let parsed = std::fs::read_to_string(&p).map_err(|e| e.to_string()).and_then(|t| crate::store::parse_setup(&t));
+    /// Save setup. An empty name is that button. The bytes are the setup file the menu writes.
+    pub(crate) fn save_setup_named(&mut self, path: &str) -> Result<std::path::PathBuf, String> {
+        let p = self.setup_file(path)?;
+        match crate::store::write(&p, crate::store::setup_text(&self.m).as_bytes()) {
+            Ok(()) => {
+                self.toast_saved(&p, Ok(()));
+                Ok(p)
+            }
+            Err(e) => {
+                let message = e.to_string();
+                self.toast_saved(&p, Err(e));
+                Err(message)
+            }
+        }
+    }
+
+    /// Recall setup. An empty name is that button. Run and stop stay as they are. `missing` means the file is not there.
+    pub(crate) fn load_setup_named(&mut self, path: &str) -> Result<(), String> {
+        let p = self.setup_file(path)?;
+        let parsed = match std::fs::read_to_string(&p) {
+            Ok(text) => crate::store::parse_setup(&text),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err("missing".into()),
+            Err(e) => Err(e.to_string()),
+        };
         match parsed {
             Ok(mut m) => {
                 (m.run, m.status) = (self.m.run, self.m.status);
@@ -6300,9 +6429,21 @@ impl Ui {
                 self.dirty_map = true;
                 self.mstat.clear();
                 self.toast(&format!("Recalled {}", crate::store::file_name(&p)));
+                Ok(())
             }
-            Err(e) => self.toast(&format!("Recall failed: {}", e)),
+            Err(e) => {
+                self.toast(&format!("Recall failed: {}", if e == "missing" { "no file" } else { &e }));
+                Err(e)
+            }
         }
+    }
+
+    /// File of the current setup slot: a setup is small and has to survive a power cycle, so the default storage directory
+    /// in RAM is not used for it when OOS's data partition is there.
+    fn setup_path(&self) -> std::path::PathBuf {
+        let keep = std::path::Path::new("/oos/setups");
+        let dir = if self.store_dir == std::path::Path::new(crate::store::DEFAULT_DIR) && keep.is_dir() { keep } else { self.store_dir.as_path() };
+        dir.join(format!("setup{}.txt", self.store_slot))
     }
 
     fn level_50(&mut self) {
@@ -6917,6 +7058,13 @@ impl Ui {
         if k == 0 {
             return; // release
         }
+        // A dialog must not swallow a force trigger: the pulse is asked for before the dialog is dismissed.
+        if k == key::FORCE {
+            if self.m.run == RunState::Stop {
+                self.m.run = RunState::Run;
+            }
+            self.src.force_hw();
+        }
         if (k == key::RUNSTOP && self.m.run == RunState::Run) || k == key::SINGLE || k == key::DEFAULT || (0x15..=0x18).contains(&k) {
             self.sim_cancel_generation();
         }
@@ -7022,6 +7170,7 @@ impl Ui {
                 if self.m.run == RunState::Stop {
                     self.m.run = RunState::Run;
                 }
+                self.src.force_hw();
                 self.toast("Force trigger");
             }
             key::MEASURE => self.open_meas_list(),
@@ -7044,8 +7193,12 @@ impl Ui {
             key::REF => self.toggle_menu(MenuId::Ref),
             key::ANALYSE => self.toggle_menu(MenuId::Decode),
             // history: back / forward step through the stored records (stops the acquisition), play-stop = live
-            0x08 => self.history_step(-1),
-            0x06 => self.history_step(1),
+            0x08 => {
+                self.history_step(-1);
+            }
+            0x06 => {
+                self.history_step(1);
+            }
             0x07 | key::NAVIGATE => {
                 if self.hist_pos.is_some() {
                     self.hist_pos = None;

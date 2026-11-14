@@ -2,20 +2,48 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 //! SCPI server (TCP 5555, the port of the stock firmware), a stock-compatible subset:
-//! *IDN? *RST *OPC? *CLS, :RUN :STOP :SINGle :AUToscale :CLEar,
-//! :CHANnel<n>:DISPlay|SCALe|OFFSet|COUPling|BWLimit|PROBe|INVert, :TIMebase[:MAIN]:SCALe|OFFSet,
-//! :TRIGger:MODE? :TRIGger:EDGE:SOURce|LEVel|SLOPe, :TRIGger:SWEep, :TRIGger:HOLDoff, :TRIGger:STATus?, :ACQuire:SRATe?|MDEPth[?] (AUTO, 1k..125M),
-//! :MEASure:ITEM? <item>[,CHANn|Rn[,src]], :MEASure:STRip?, :MEASure:READout?, :EYE:ITEM? <figure>,
-//! :MEASure:ITEM? <item>[,CHANn|Rn[,src]], :MEASure:REFS 10/90|20/80, :MEASure:TSETup, :MEASure:THOLd,
+//! *IDN? *RST *OPC? *CLS *ESR?, :RUN :STOP :SINGle :TFORce :AUToscale :CLEar,
+//! :CHANnel<n>:DISPlay|SCALe|OFFSet|POSition|COUPling|BWLimit|PROBe|INVert|UNITs|VERNier|TCALibrate|BIAS|ZERO|EXPand|LABel:SHOW|LABel:CONTent,
+//! :TIMebase[:MAIN]:SCALe|OFFSet, :TIMebase:DELay:ENABle|SCALe|OFFSet, :TIMebase:VERNier, :TIMebase:HREFerence:MODE, :TIMebase:MODE, :TIMebase:ROLL,
+//! :TIMebase:XY:ENABle|X|Y|Z,
+//! :TRIGger:MODE EDGE|PULSe|SLOPe|VIDeo|PATTern|DURation|TIMeout|RUNT|WINDow|DELay|SETup|NEDGe|RS232|IIC|SPI|CAN|LIN,
+//! :TRIGger:EDGE:SOURce|LEVel|SLOPe, :TRIGger:PULSe:SOURce|POLarity|WHEN|UWIDth|LWIDth|LEVel,
+//! :TRIGger:SLOPe:SOURce|POLarity|WHEN|TUPPer|TLOWer|WINDow|ALEVel|BLEVel,
+//! :TRIGger:VIDeo:SOURce|POLarity|MODE|LINE|STANdard|LEVel,
+//! :TRIGger:PATTern:PATTern|SOURce|LEVel, :TRIGger:DURation:TYPE|SOURce|WHEN|TUPPer|TLOWer|LEVel,
+//! :TRIGger:TIMeout:SOURce|SLOPe|TIME|LEVel, :TRIGger:RUNT:SOURce|POLarity|WHEN|WUPPer|WLOWer|ALEVel|BLEVel,
+//! :TRIGger:WINDows:SOURce|SLOPe|POSition|TIME|WHEN|ALEVel|BLEVel, :TRIGger:DELay:SA|ASLop|SB|BSLop|TYPE|TUPPer|TLOWer|ALEVel|BLEVel,
+//! :TRIGger:SHOLd:DSRC|CSRC|SLOPe|TYPE|STIMe|HTIMe|DLEVel|CLEVel, :TRIGger:NEDGe:SOURce|SLOPe|IDLE|EDGE|LEVel,
+//! :TRIGger:ZONE<n>:STATe|SOURce|MODE|PLACement|POINts|CLEar,
+//! :SEARch:STATe|COUNt?|MODE|EVENt|VALue?,
+//! :RECord:CURRent|:WREPlay:FCURrent|:WREPlay:FMAX?, :NAVigate:FRAMe:NEXT|BACK|STARt|END,
+//! :TRIGger:SWEep, :TRIGger:HOLDoff, :TRIGger:STATus?,
+//! :ACQuire:SRATe?|MDEPth[?] (AUTO, 1k..125M)|TYPE NORM/PEAK/AVER/HRES|AVERages|ULTRa:MAXFrame,
+//! :MEASure:ITEM[?] <item>[,CHANn|Rn[,src]] (the set form adds a readout row), :MEASure:SOURce, :MEASure:CLEar, :MEASure:INDicator,
+//! :MEASure:STRip?, :MEASure:STRip:DOCK UNDer|LEFT|RIGHt|ABOVe, :MEASure:READout?, :EYE:ITEM? <figure>,
+//! :MEASure:COUNter:ENABle|SOURce|VALue? (the same counter as :COUNter),
+//! :MEASure:STATistic:DISPlay|RESet|ITEM, :MEASure:REFS 10/90|20/80, :MEASure:AREA MAIN, :MEASure:TSETup, :MEASure:THOLd,
+//! :MEASure:BURSt:IDLE, :MEASure:OUTSide ABOVe|BELow|BOTH, :MEASure:NPERiods, :MEASure:EDGes CLOCk|DATA,
+//! :CURSor:MODE OFF|MAN|TRAC|XY, :CURSor:TRACk:MODE X, :CURSor:MANual:TYPE TIME|AMPLitude, :CAX|:CBX|:CAY|:CBY, :AXValue|:AYValue|:BXValue|:BYValue, :XDELta|:IXDelta|:YDELta, :CURSor:MEASure:INDicator,
+//! :DVM:ENABle|SOURce|MODE|CURRent?, :COUNter:ENABle|SOURce|MODE|NDIGits|CURRent?,
+//! :MASK:ENABle|SOURce|X|Y|CREate|RESet|OPERate|FAILed?|PASSed?|TOTal?,
+//! :HISTogram:ENABle|TYPE|SOURce, :HISTogram:STATistics:RESult?,
+//! :MATH<n>:DISPlay|OPERator|SOURce1|SOURce2|SCALe|OFFSet|EXPRession|RESet, :MATH<n>:FFT:SOURce|WINDow|SCALe, :MATH<n>:FILTer:TYPE|W1|W2,
+//! :BUS<n>:MODE|DISPlay|FORMat|EVENt|THReshold|DATA?, :BUS<n>:RS232:TX|RX|BAUD|PARity|DBITs, :BUS<n>:IIC:SCLK:SOURce|SDA:SOURce, :BUS<n>:SPI:SCLK:SOURce|MOSI:SOURce|SS:SOURce|DBITs,
 //! :POWer:ITEM? <item>[,src...], :POWer:HARMonics? [src], :SPECtrum:ITEM? <item>[,src], :BODE:MODE LOOP|PSRR|IMPedance,
 //! :MAGnetic:ITEM? <item>[,V,I], :INVerter:ITEM? <item>[,src...], :DPT:ITEM? <item>[,V,I[,G]], :BANDwidth:ITEM? <item>[,src],
-//! :WAVeform:SOURce CHANn|Rn|MODE NORM/RAW|FORMat|DATA?|PREamble?|POINts?, :DISPlay:DATA? (BMP),
-//! :REFerence:SLOT R1..R10, :LOAD <file>, :IMPort [file], :SAVE, :SHOW ON|OFF, :CLEar,
+//! :WAVeform:SOURce CHANn|Rn|MODE NORM/MAX/RAW|FORMat BYTE/WORD/ASC|STARt|STOP|POINts|DATA?|PREamble?,
+//! :SAVE:WAVeform <file.csv|file.bin> (the Storage menu's screen waveform; an empty path is the CSV button),
+//! :SAVE:SETup [slot|file.stp] and :LOAD:SETup [slot|file.stp] (the Storage menu's setup; an empty path is the current slot),
+//! :DISPlay:DATA? [BMP|PNG], :DISPlay:TYPE|GRADing:TIME|WBRightness|GBRightness|GRID|RULers|COLor,
+//! :REFerence:SLOT R1..R10, :CURRent, :SOURce, :VSCale, :VOFFset, :COLor, :RESet, :LABel:CONTent, :LOAD <file>, :IMPort [file], :EXPort [file], :SAVE, :SHOW ON|OFF, :CLEar,
+//! :MEASure:SETup:MAX|MIN|MID (the middle stays 50), :MEASure:THReshold:TYPE PERCent, :MEASure:THReshold:DEFault, :MEASure:SETup:PSA|PSB|DSA|DSB,
+//! :MEASure:AMP:TYPE MANual (histogram), :MEASure:AMP:MANual:TOP|BASE HISTogram,
 //! :SIM:PRESet <name>, :SIM:SLOT R1..R10, :SIM:PLAY ON|OFF, :SIM:SHOW ON|OFF,
 //! :SIM:SSC:MODE OFF|DOWN|CENTER, :SIM:SSC:DEViation <fraction>, :SIM:SSC:FREQuency <Hz>,
 //! :SIM:JITTer:DCD <seconds pp>|:CORRelated <seconds RMS>|:CORNer <Hz>, :SIM:PATTern PRBS7..31.
 //! SIM configuration is applied together on the next :SIM:PLAY ON. :SIM:BUSY? reports background generation.
-//! :LA:STATe, :LA:DIGital<n>:DISPlay, :LA:POD<n>:THReshold, :LA:POINts?, :LA:PREamble?, :LA:DATA? (u16 LE words),
+//! :LA:STATe, :LA:DIGital<n>:DISPlay, :LA:POD<n>:THReshold, :LA:SIZE SMALl|MEDium|LARGe, :LA:POINts?, :LA:PREamble?, :LA:DATA? (u16 LE words),
 //! :SYSTem:ERRor?, OOS: :VIEW SCOPe|SPECtrum|EYE|POWer|BODE|MAGnetic|INVerter|DPT, :IDENtify?, :CALibrate:STARt 0..4[,ZERO] / :STATus? /
 //! :CANCel, :BODE:RUN ON|OFF / :DATA? / :GENerator "ip:port",
 //! built-in generator: :SOURce[1]:OUTPut[:STATe] ON|OFF, :FUNCtion SINusoid|SQUare|RAMP|PULSe|NOISe|DC|ARB, :ARB:DATA, :ARB:CAPTure, :FUNCtion:SQUare:DUTY, :FUNCtion:RAMP:SYMMetry, :MOD[:STATe], :MOD:TYPe AM|FM|PM, :MOD:AM:DEPTh,
@@ -25,6 +53,7 @@
 
 use crate::gfx::Canvas;
 use crate::board::{board, Board};
+use crate::math::{math_scales, MathCh, MathOp, Window, NMATH};
 use crate::model::*;
 use crate::ui::Ui;
 use std::io::{ErrorKind, Read, Write};
@@ -74,9 +103,16 @@ pub struct Scpi {
     /// :WAVeform:SOURce, a channel or a reference slot
     wav_src: WaveId,
     wav_fmt: u8, // 0 BYTE, 1 WORD, 2 ASCII
-    /// :WAVeform:MODE: false = the screen record, true = every sample of the record in the screen window (RAW)
-    wav_raw: bool,
+    /// :WAVeform:MODE: 0 NORMal (screen), 1 MAXimum (memory while stopped), 2 RAW (memory)
+    wav_mode: u8,
+    /// :WAVeform:STARt and :WAVeform:STOP, 1-based inclusive. `stop == 0` reads through the last point.
+    wav_start: u64,
+    wav_stop: u64,
     err: Vec<String>,
+    /// IEEE 488.2 event status register. *ESR? returns it and clears it. Bit 7 is set at power on.
+    esr: u8,
+    /// The search event last jumped to, 1-based. 0 means none.
+    search_at: u32,
 }
 
 /// SCPI keyword match: the long form or its short form (the upper-case part), case-insensitive.
@@ -92,6 +128,231 @@ fn suffix(tok: &str) -> (&str, Option<usize>) {
     (&tok[..i], tok[i..].parse().ok())
 }
 
+fn persist_index(arg: &str) -> Option<usize> {
+    let a = arg.trim();
+    if kw(a, "MIN") {
+        return Some(0);
+    }
+    if kw(a, "INFinite") {
+        return Some(PERSIST.len() - 1);
+    }
+    let v = a.parse::<f64>().ok().filter(|v| v.is_finite() && *v >= 0.0)?;
+    let times = [0.0, 0.1, 0.5, 1.0, 5.0, 10.0];
+    times.iter().enumerate().min_by(|(_, a), (_, b)| (*a - v).abs().partial_cmp(&(*b - v).abs()).unwrap_or(std::cmp::Ordering::Equal)).map(|(i, _)| i)
+}
+
+fn persist_token(i: usize) -> &'static str {
+    match i {
+        0 => "MIN",
+        1 => "0.1",
+        2 => "0.5",
+        3 => "1",
+        4 => "5",
+        5 => "10",
+        _ => "INF",
+    }
+}
+
+fn bus_index(tok: &str) -> Option<usize> {
+    let (k, n) = suffix(tok);
+    if kw(k, "BUS") { n.filter(|&n| (1..=DECODERS).contains(&n)).map(|n| n - 1) } else { None }
+}
+
+fn with_bus(ui: &mut Ui, k: usize, f: impl FnOnce(&mut Model)) {
+    let was = ui.m.dec_sel;
+    if k != was {
+        ui.m.dec_select(k);
+    }
+    f(&mut ui.m);
+    if k != was {
+        ui.m.dec_select(was);
+    }
+    ui.mark_changed();
+}
+
+fn proto_token(p: Proto) -> String {
+    match p {
+        Proto::Parallel => "PAR".into(),
+        Proto::Uart => "RS232".into(),
+        Proto::Spi => "SPI".into(),
+        Proto::I2c => "IIC".into(),
+        Proto::Lin => "LIN".into(),
+        Proto::Can => "CAN".into(),
+        other => other.name().chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_ascii_uppercase(),
+    }
+}
+
+fn trig_token(ui: &Ui) -> String {
+    match ui.m.trig_type {
+        TrigType::Edge => "EDGE".into(),
+        TrigType::Pulse => "PULS".into(),
+        TrigType::Slope => "SLOP".into(),
+        TrigType::Video => "VID".into(),
+        TrigType::Pattern => "PATT".into(),
+        TrigType::Duration => "DUR".into(),
+        TrigType::Timeout => "TIM".into(),
+        TrigType::Runt => "RUNT".into(),
+        TrigType::Window => "WIND".into(),
+        TrigType::Delay => "DEL".into(),
+        TrigType::SetupHold => "SET".into(),
+        TrigType::NthEdge => "NEDG".into(),
+        TrigType::Bus => proto_token(ui.m.dec_proto),
+    }
+}
+
+/// The search marks whatever trigger is already set. Only that name is legal.
+fn names_trigger(ui: &Ui, arg: &str) -> bool {
+    match ui.m.trig_type {
+        TrigType::Edge => kw(arg, "EDGE"),
+        TrigType::Pulse => kw(arg, "PULSe"),
+        TrigType::Slope => kw(arg, "SLOPe"),
+        TrigType::Video => kw(arg, "VIDeo"),
+        TrigType::Pattern => kw(arg, "PATTern"),
+        TrigType::Duration => kw(arg, "DURation"),
+        TrigType::Timeout => kw(arg, "TIMeout"),
+        TrigType::Runt => kw(arg, "RUNT"),
+        TrigType::Window => kw(arg, "WINDow") || kw(arg, "WINDows"),
+        TrigType::Delay => kw(arg, "DELay"),
+        TrigType::SetupHold => kw(arg, "SETup") || kw(arg, "SHOLd"),
+        TrigType::NthEdge => kw(arg, "NEDGe"),
+        TrigType::Bus => parse_proto(arg) == Some(ui.m.dec_proto),
+    }
+}
+
+fn parse_proto(arg: &str) -> Option<Proto> {
+    let a = arg.trim();
+    if kw(a, "PARallel") { return Some(Proto::Parallel); }
+    if kw(a, "RS232") || kw(a, "UART") { return Some(Proto::Uart); }
+    if kw(a, "IIC") || kw(a, "I2C") { return Some(Proto::I2c); }
+    if kw(a, "LIN") { return Some(Proto::Lin); }
+    if kw(a, "SPI") { return Some(Proto::Spi); }
+    if kw(a, "CAN") { return Some(Proto::Can); }
+    PROTOS.into_iter().find(|p| proto_token(*p).eq_ignore_ascii_case(a))
+}
+
+fn nearest_baud(v: f64) -> usize {
+    crate::decode::BAUDS.iter().enumerate().min_by(|(_, a), (_, b)| (*a - v).abs().partial_cmp(&(*b - v).abs()).unwrap_or(std::cmp::Ordering::Equal)).map(|(i, _)| i).unwrap_or(0)
+}
+
+fn chan_token(c: usize) -> String {
+    format!("CHAN{}", c.min(NCH - 1) + 1)
+}
+
+fn math_index(tok: &str) -> Option<usize> {
+    let (k, n) = suffix(tok);
+    if kw(k, "MATH") { n.filter(|&n| (1..=NMATH).contains(&n)).map(|n| n - 1) } else { None }
+}
+
+fn put_math(ui: &mut Ui, k: usize, c: MathCh) {
+    if k == ui.m.math_sel {
+        ui.m.math_lin = c.lin;
+        ui.m.math = c.op;
+        ui.m.math_a = c.a;
+        ui.m.math_b = c.b;
+        ui.m.math_scale = c.scale;
+        ui.m.math_fc = c.fc;
+        ui.m.math_bw = c.bw;
+        ui.m.math_offset = c.offset;
+        ui.m.fft_win = c.win;
+    }
+    ui.m.maths[k] = c;
+    ui.mark_changed();
+}
+
+fn math_op_name(op: MathOp) -> &'static str {
+    match op {
+        MathOp::Off => "OFF",
+        MathOp::Add => "ADD",
+        MathOp::Sub => "SUBT",
+        MathOp::Mul => "MULT",
+        MathOp::Div => "DIV",
+        MathOp::And => "AND",
+        MathOp::Or => "OR",
+        MathOp::Xor => "XOR",
+        MathOp::Not => "NOT",
+        MathOp::Fft => "FFT",
+        MathOp::Intg => "INTG",
+        MathOp::Diff => "DIFF",
+        MathOp::Sqrt => "SQRT",
+        MathOp::Lg => "LG",
+        MathOp::Ln => "LN",
+        MathOp::Exp => "EXP",
+        MathOp::Abs => "ABS",
+        MathOp::Lpf => "LPAS",
+        MathOp::Hpf => "HPAS",
+        MathOp::Bpf => "BPAS",
+        MathOp::Bsf => "BST",
+        MathOp::Lin => "AXB",
+        MathOp::Nand => "NAND",
+        MathOp::Nor => "NOR",
+        MathOp::Conv => "CONV",
+        MathOp::Fir => "FIR",
+        MathOp::Expr => "EXPR",
+        MathOp::A2d => "A2D",
+        MathOp::D2a => "D2A",
+        MathOp::Unnrzi => "UNNRZI",
+    }
+}
+
+fn parse_math_op(arg: &str) -> Option<MathOp> {
+    [
+        ("ADD", MathOp::Add),
+        ("SUBTract", MathOp::Sub),
+        ("MULTiply", MathOp::Mul),
+        ("DIVision", MathOp::Div),
+        ("AND", MathOp::And),
+        ("OR", MathOp::Or),
+        ("XOR", MathOp::Xor),
+        ("NOT", MathOp::Not),
+        ("FFT", MathOp::Fft),
+        ("INTG", MathOp::Intg),
+        ("DIFF", MathOp::Diff),
+        ("SQRT", MathOp::Sqrt),
+        ("LG", MathOp::Lg),
+        ("LN", MathOp::Ln),
+        ("EXP", MathOp::Exp),
+        ("ABS", MathOp::Abs),
+        ("LPASs", MathOp::Lpf),
+        ("HPASs", MathOp::Hpf),
+        ("BPASs", MathOp::Bpf),
+        ("BSTop", MathOp::Bsf),
+        ("AXB", MathOp::Lin),
+        ("NAND", MathOp::Nand),
+        ("NOR", MathOp::Nor),
+        ("CONV", MathOp::Conv),
+        ("FIR", MathOp::Fir),
+        ("EXPR", MathOp::Expr),
+        ("A2D", MathOp::A2d),
+        ("D2A", MathOp::D2a),
+        ("UNNRZI", MathOp::Unnrzi),
+    ]
+    .into_iter()
+    .find(|(name, _)| kw(arg.trim(), name))
+    .map(|(_, op)| op)
+}
+
+fn math_src_name(src: usize) -> String {
+    if src < NCH { format!("CHAN{}", src + 1) } else { format!("MATH{}", src - NCH + 1) }
+}
+
+/// A math input: a live channel, or an earlier math trace. A later trace would be a cycle.
+fn parse_math_src(s: &str, k: usize) -> Option<usize> {
+    if let Some(c) = parse_ch(s) {
+        return Some(c);
+    }
+    let idx = math_index(s.trim())?;
+    (idx < k).then_some(NCH + idx)
+}
+
+fn nearest_step(steps: &[f64], want: f64) -> usize {
+    steps.iter().enumerate().min_by(|(_, a), (_, b)| (*a - want).abs().partial_cmp(&(*b - want).abs()).unwrap_or(std::cmp::Ordering::Equal)).map(|(i, _)| i).unwrap_or(0)
+}
+
+fn unquote(s: &str) -> &str {
+    let s = s.trim();
+    if s.len() >= 2 && ((s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\''))) { &s[1..s.len() - 1] } else { s }
+}
+
 fn parse_ch(s: &str) -> Option<usize> {
     let (k, n) = suffix(s.trim());
     if kw(k, "CHANnel") {
@@ -99,6 +360,102 @@ fn parse_ch(s: &str) -> Option<usize> {
     } else {
         None
     }
+}
+
+/// At least `pairs` vertices, each a time and a voltage. A box is exactly two.
+fn point_list(arg: &str, pairs: usize) -> Option<Vec<(f64, f64)>> {
+    let nums: Vec<f64> = arg.split(',').map(str::trim).filter(|s| !s.is_empty()).map(|s| s.parse::<f64>().ok()).collect::<Option<_>>()?;
+    if nums.len() < pairs * 2 || nums.len() % 2 != 0 || nums.iter().any(|n| !n.is_finite()) {
+        return None;
+    }
+    if pairs == 2 && nums.len() != 4 {
+        return None;
+    }
+    Some(nums.chunks(2).map(|c| (c[0], c[1])).collect())
+}
+
+fn point_text(pts: &[(f64, f64)]) -> String {
+    pts.iter().flat_map(|(t, v)| [e(*t), e(*v)]).collect::<Vec<_>>().join(",")
+}
+
+/// Which time a trigger command writes.
+enum TimeSlot {
+    Limit,
+    Setup,
+    Hold,
+    Idle,
+}
+
+fn slope_token(s: Slope) -> &'static str {
+    match s {
+        Slope::Rise => "POS",
+        Slope::Fall => "NEG",
+        Slope::Either => "RFAL",
+    }
+}
+
+fn parse_slope(arg: &str, allow_either: bool) -> Option<Slope> {
+    if kw(arg, "POSitive") {
+        Some(Slope::Rise)
+    } else if kw(arg, "NEGative") {
+        Some(Slope::Fall)
+    } else if allow_either && kw(arg, "RFALl") {
+        Some(Slope::Either)
+    } else {
+        None
+    }
+}
+
+/// One letter per analog channel. An edge is rise or fall, and only the first edge is kept.
+fn pattern_bits(arg: &str, edges: bool) -> Option<[Bit; NCH]> {
+    let parts: Vec<&str> = arg.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+    if parts.len() != NCH {
+        return None;
+    }
+    let mut bits = [Bit::X; NCH];
+    let mut edge = false;
+    for (i, p) in parts.iter().enumerate() {
+        let b = if p.eq_ignore_ascii_case("H") {
+            Bit::H
+        } else if p.eq_ignore_ascii_case("L") {
+            Bit::L
+        } else if p.eq_ignore_ascii_case("X") {
+            Bit::X
+        } else if edges && p.eq_ignore_ascii_case("R") {
+            Bit::R
+        } else if edges && p.eq_ignore_ascii_case("F") {
+            Bit::F
+        } else {
+            return None;
+        };
+        if matches!(b, Bit::R | Bit::F) && edge {
+            bits[i] = Bit::X;
+        } else {
+            if matches!(b, Bit::R | Bit::F) {
+                edge = true;
+            }
+            bits[i] = b;
+        }
+    }
+    Some(bits)
+}
+
+fn pattern_text(bits: &[Bit; NCH], edges: bool) -> String {
+    bits.iter()
+        .map(|b| match b {
+            Bit::H => "H",
+            Bit::L => "L",
+            Bit::R if edges => "R",
+            Bit::F if edges => "F",
+            _ => "X",
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// The line knob stops at half the standard's lines, ten short of the last one.
+fn video_line_max(std: VideoStd) -> u32 {
+    (std.lines() / 2).saturating_sub(10).max(1)
 }
 
 fn shown(v: f64) -> String {
@@ -175,10 +532,13 @@ const MEAS_ITEMS: &[(&str, &str, Meas)] = &[
     ("VLOWer", "VLOWER", Meas::Vlower),
     ("CAVG", "CAVG", Meas::VavgCyc),
     ("CRMS", "CRMS", Meas::VrmsCyc),
+    ("PVRMs", "CRMS", Meas::VrmsCyc),
     ("ACRms", "ACRMS", Meas::VrmsAc),
     ("SDEViation", "SDEVIATION", Meas::StdDev),
     ("AREA", "AREA", Meas::Area),
+    ("MARea", "AREA", Meas::Area),
     ("CARea", "CAREA", Meas::AreaCyc),
+    ("MPARea", "CAREA", Meas::AreaCyc),
     ("PPULses", "PPULSES", Meas::PPulses),
     ("NPULses", "NPULSES", Meas::NPulses),
     ("PEDGes", "PEDGES", Meas::PEdges),
@@ -186,7 +546,9 @@ const MEAS_ITEMS: &[(&str, &str, Meas)] = &[
     ("TVMAX", "TVMAX", Meas::TVmax),
     ("TVMIN", "TVMIN", Meas::TVmin),
     ("PSLew", "PSLEW", Meas::PSlew),
+    ("PSLewrate", "PSLEW", Meas::PSlew),
     ("NSLew", "NSLEW", Meas::NSlew),
+    ("NSLewrate", "NSLEW", Meas::NSlew),
     ("ESTUI", "ESTUI", Meas::EstUi),
     ("UI", "ESTUI", Meas::EstUi),
     ("MEDian", "MEDIAN", Meas::Median),
@@ -249,6 +611,22 @@ fn pair_token(k: usize) -> &'static str {
 }
 
 /// R1..R10, REF1..REF10, or 1..10.
+fn ref_color_index(s: &str) -> Option<usize> {
+    if kw(s, "GRAY") || kw(s, "WHITe") {
+        Some(0)
+    } else if kw(s, "RED") {
+        Some(1)
+    } else if kw(s, "GREen") {
+        Some(2)
+    } else if kw(s, "BLUE") {
+        Some(3)
+    } else if kw(s, "ORANge") || kw(s, "VIOLet") {
+        Some(4)
+    } else {
+        None
+    }
+}
+
 fn parse_slot(s: &str) -> Option<usize> {
     let s = s.trim().trim_matches('"');
     if let Some(WaveId::Ref(i)) = parse_wave(s) {
@@ -268,6 +646,65 @@ fn parse_bool(s: &str) -> Option<bool> {
 /// A finite number ("nan", "inf" and overflows are refused: they would end up in the model and in saved setups).
 fn num(s: &str) -> Option<f32> {
     s.trim().parse::<f32>().ok().filter(|v| v.is_finite())
+}
+
+/// Coarse 1-2-5 step when fine adjust is off. With it on, the same row the vertical knob walks:
+/// the calibration ladder from 100 µV to 10 V, stored as a coarse step and a factor.
+fn set_channel_scale(ch: &mut Channel, fine: bool, tip: f32) {
+    let bnc = tip / ch.probe.max(1e-12);
+    if !fine || !(bnc > 0.0) {
+        ch.vscale = nearest(&VSCALES, bnc.max(VSCALES[0]));
+        ch.vfine = 1.0;
+        return;
+    }
+    let rows = board().vscale_steps_nv();
+    let nv = (bnc as f64 * 1e9).round() as i64;
+    let at = rows.iter().enumerate().min_by_key(|(_, k)| (nv - **k).abs()).map(|(i, _)| i).unwrap_or(0);
+    let want = (rows[at] as f64 * 1e-9) as f32;
+    let i = VSCALES.iter().rposition(|&s| s <= want * 1.000001).unwrap_or(0);
+    let f = want / VSCALES[i];
+    ch.vscale = i;
+    ch.vfine = if (f - 1.0).abs() < 1e-6 { 1.0 } else { f };
+}
+
+/// Coarse 1-2-5 step when fine adjust is off. With it on, three significant digits, as a step and a factor.
+/// From the roll time base on, only the coarse steps remain.
+fn set_time_scale(m: &mut Model, want: f32) {
+    let old = m.time_per_div();
+    let ts = tscales();
+    let (scale, fine) = if !m.fine_t || !(want > 0.0) {
+        (nearest(&ts, want.max(ts[0])), 1.0)
+    } else {
+        let raw = (want as f64).clamp(ts[0] as f64, ts[ts.len() - 1] as f64);
+        let q = 10f64.powf(raw.max(1e-12).log10().floor() - 2.0);
+        let snapped = (((raw / q).round() * q) as f32).clamp(ts[0], ts[ts.len() - 1]);
+        let i = ts.iter().position(|&t| t >= snapped * 0.99999).unwrap_or(ts.len() - 1);
+        if ts[i] as f64 >= board().roll_tdiv() * 0.999 {
+            (nearest(&ts, snapped), 1.0)
+        } else {
+            let f = snapped / ts[i];
+            (i, if (f - 1.0).abs() < 1e-5 { 1.0 } else { f })
+        }
+    };
+    m.tscale = scale;
+    m.tfine = fine;
+    if m.zscale > m.tscale {
+        m.zscale = m.tscale;
+    }
+    // The delay is the time in the middle. Keep the expand point where the screen keeps it.
+    let new = m.time_per_div();
+    let half = HDIV / 2.0;
+    match m.h_expand {
+        HExpand::Center => {}
+        HExpand::Left => m.delay -= half * (old - new),
+        HExpand::Right => m.delay += half * (old - new),
+        HExpand::Trigger => m.delay *= new / old,
+    }
+}
+
+fn clamp_channel_offset(ch: &mut Channel) {
+    let max = ch.offset_max();
+    ch.offset = ch.offset.clamp(-max, max);
 }
 
 fn nearest(ladder: &[f32], v: f32) -> usize {
@@ -304,7 +741,21 @@ impl Scpi {
         } else {
             eprintln!("oos-ui: SCPI port {} not available", port);
         }
-        Scpi { l, clients: Vec::new(), wav_src: WaveId::Ch(0), wav_fmt: 0, wav_raw: false, err: Vec::new() }
+        Scpi { l, clients: Vec::new(), wav_src: WaveId::Ch(0), wav_fmt: 0, wav_mode: 0, wav_start: 1, wav_stop: 0, err: Vec::new(), esr: 128, search_at: 0 }
+    }
+
+    /// Queue a SCPI error and latch the matching *ESR bit. A query that fails still answers with this text,
+    /// so a client blocked on a line never waits forever.
+    fn push_err(&mut self, s: String) {
+        let code = s.split([',', '"']).next().unwrap_or("").trim().parse::<i32>().unwrap_or(0);
+        self.esr |= match code {
+            -199..=-100 => 32, // command error
+            -299..=-200 => 16, // execution error
+            -399..=-300 => 8,  // device-specific error
+            -499..=-400 => 4,  // query error
+            _ => 16,
+        };
+        self.err.push(s);
     }
 
     pub fn port(&self) -> Option<u16> {
@@ -367,7 +818,7 @@ impl Scpi {
         let mut out: Vec<u8> = Vec::new();
         for cmd in line.split(';') {
             if out.len() >= RESP_MAX {
-                self.err.push("-363,\"Input buffer overrun\" rest of the line dropped".into());
+                self.push_err("-363,\"Input buffer overrun\" rest of the line dropped".into());
                 break;
             }
             if let Some(r) = self.exec(ui, cv, cmd.trim()) {
@@ -382,9 +833,20 @@ impl Scpi {
 
     fn exec(&mut self, ui: &mut Ui, cv: &Canvas, cmd: &str) -> Option<Vec<u8>> {
         if let Some(error) = ui.take_sim_error() {
-            self.err.push(format!("-224,\"SIM generation failed\" {error}"));
+            self.push_err(format!("-224,\"SIM generation failed\" {error}"));
         }
+        let before = self.err.len();
         let r = self.exec_cmd(ui, cv, cmd);
+        // a query with no payload would leave the client blocked on the next line: answer with the error instead
+        let query = cmd.split_whitespace().next().unwrap_or("").ends_with('?');
+        let r = if query && r.is_none() {
+            if self.err.len() == before {
+                self.push_err(format!("-113,\"Undefined header\" {}", cmd));
+            }
+            self.err.last().map(|e| e.as_bytes().to_vec())
+        } else {
+            r
+        };
         // a client that never asks for its errors, or sends megabytes of nonsense, must not fill the memory
         for e in &mut self.err {
             if e.len() > ERR_LEN {
@@ -393,7 +855,7 @@ impl Scpi {
         }
         if self.err.len() > ERR_MAX {
             self.err.truncate(ERR_MAX - 1);
-            self.err.push("-350,\"Queue overflow\"".into());
+            self.push_err("-350,\"Queue overflow\"".into());
         }
         r
     }
@@ -416,10 +878,21 @@ impl Scpi {
                 let p = oos_hal::model::platform();
                 return t(&format!("OOS,{},{},oos-ui {}", p.caps.name, p.serial.as_deref().unwrap_or("0"), env!("CARGO_PKG_VERSION")));
             }
-            "*OPC" => return if query { t("1") } else { None },
+            "*OPC" => {
+                if !query {
+                    self.esr |= 1;
+                }
+                return if query { t("1") } else { None };
+            }
             "*CLS" => {
                 self.err.clear();
+                self.esr = 0;
                 return None;
+            }
+            "*ESR" if query => {
+                let v = self.esr;
+                self.esr = 0;
+                return t(&v.to_string());
             }
             "*RST" => {
                 ui.key(crate::ui::key::DEFAULT);
@@ -440,6 +913,18 @@ impl Scpi {
         }
         if nodes.len() == 1 && kw(nodes[0], "CLEar") {
             ui.key(crate::ui::key::CLEAR);
+            return None;
+        }
+        // Rigol: a forced trigger releases Normal or Single when the level never crosses. On a reference or SIM
+        // session that is the replay flag. On the live hardware the front-panel key also asks the acquisition
+        // thread to pulse the FPGA force bit.
+        if !query && nodes.len() == 1 && kw(nodes[0], "TFORce") {
+            if ui.record_mode() {
+                ui.record_key(crate::ui::key::FORCE);
+            } else {
+                ui.key(crate::ui::key::FORCE);
+            }
+            ui.mark_changed();
             return None;
         }
         if !query && nodes.len() == 1 && kw(nodes[0], "STOP") && ui.sim_generating() {
@@ -495,9 +980,79 @@ impl Scpi {
                     return Some(None);
                 }
             }
-            if kw(k0, "CHANnel") && nodes.len() == 2 {
+            if kw(k0, "CHANnel") && (nodes.len() == 2 || nodes.len() == 3) {
                 let c = sfx?.checked_sub(1).filter(|&c| c < NCH)?;
                 let n1 = nodes[1];
+                if nodes.len() == 3 && kw(nodes[1], "LABel") && kw(nodes[2], "CONTent") {
+                    if query {
+                        return Some(t(&m.ch_label[c]));
+                    }
+                    let text = arg.trim().trim_matches('"').chars().take(10).collect::<String>();
+                    m.ch_label[c] = text;
+                    return Some(None);
+                }
+                if nodes.len() == 3 && kw(nodes[1], "LABel") && kw(nodes[2], "SHOW") {
+                    if query {
+                        return Some(t(if m.ch_label[c].is_empty() { "0" } else { "1" }));
+                    }
+                    return match parse_bool(arg) {
+                        Some(false) => {
+                            m.ch_label[c].clear();
+                            Some(None)
+                        }
+                        Some(true) => {
+                            if m.ch_label[c].is_empty() {
+                                m.ch_label[c] = format!("CH{}", c + 1);
+                            }
+                            Some(None)
+                        }
+                        None => {
+                            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                            Some(None)
+                        }
+                    };
+                }
+                if nodes.len() != 2 {
+                    return None;
+                }
+                if kw(n1, "VERNier") {
+                    // One fine-adjust switch for every channel: the screen has a single control.
+                    if query {
+                        return Some(t(if m.fine_v { "1" } else { "0" }));
+                    }
+                    return match parse_bool(arg) {
+                        Some(on) => {
+                            m.fine_v = on;
+                            if !on {
+                                m.ch[c].vfine = 1.0;
+                                clamp_channel_offset(&mut m.ch[c]);
+                            }
+                            Some(None)
+                        }
+                        None => {
+                            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                            Some(None)
+                        }
+                    };
+                }
+                if kw(n1, "EXPand") {
+                    // One switch for every channel: scale around ground, or around the screen center.
+                    // The manual spells this GND|CENTer on math. This screen keeps it on the channel.
+                    if query {
+                        return Some(t(if m.v_expand_gnd { "GND" } else { "CENT" }));
+                    }
+                    if kw(arg, "GND") {
+                        m.v_expand_gnd = true;
+                    } else if kw(arg, "CENTer") {
+                        m.v_expand_gnd = false;
+                    } else {
+                        self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    }
+                    return Some(None);
+                }
+                let expand_gnd = m.v_expand_gnd;
+                let fine_v = m.fine_v;
+                let slow_deskew = m.time_per_div() > 10e-6;
                 let ch = &mut m.ch[c];
                 if kw(n1, "DISPlay") {
                     if query {
@@ -508,13 +1063,42 @@ impl Scpi {
                     if query {
                         return Some(t(&e(ch.volts_per_div() as f64)));
                     }
-                    ch.vscale = nearest(&VSCALES, num(arg)? / ch.probe);
-                    ch.vfine = 1.0;
-                } else if kw(n1, "OFFSet") {
+                    let old = ch.volts_per_div();
+                    let Some(tip) = num(arg) else { return None };
+                    set_channel_scale(ch, fine_v, tip);
+                    if expand_gnd && old > 0.0 {
+                        ch.offset *= ch.volts_per_div() / old;
+                    }
+                    clamp_channel_offset(ch);
+                } else if kw(n1, "OFFSet") || kw(n1, "POSition") {
                     if query {
                         return Some(t(&e(ch.offset as f64)));
                     }
-                    ch.offset = num(arg)?;
+                    let Some(v) = num(arg) else { return None };
+                    ch.offset = v;
+                    clamp_channel_offset(ch);
+                } else if kw(n1, "UNITs") {
+                    if query {
+                        return Some(t(match ch.unit {
+                            AmpUnit::V => "VOLT",
+                            AmpUnit::A => "AMP",
+                            AmpUnit::W => "WATT",
+                            AmpUnit::U => "UNKN",
+                        }));
+                    }
+                    let a = arg.trim();
+                    ch.unit = if kw(a, "VOLTage") {
+                        AmpUnit::V
+                    } else if kw(a, "AMPere") {
+                        AmpUnit::A
+                    } else if kw(a, "WATT") {
+                        AmpUnit::W
+                    } else if kw(a, "UNKNown") {
+                        AmpUnit::U
+                    } else {
+                        self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                        return Some(None);
+                    };
                 } else if kw(n1, "COUPling") {
                     if query {
                         return Some(t(ch.coupling.name()));
@@ -550,24 +1134,55 @@ impl Scpi {
                         return Some(t(&e(ch.probe as f64)));
                     }
                     ch.probe = num(arg).filter(|&p| p > 0.0)?;
+                    clamp_channel_offset(ch);
                 } else if kw(n1, "INVert") {
                     if query {
                         return Some(t(if ch.invert { "1" } else { "0" }));
                     }
                     ch.invert = parse_bool(arg)?;
+                } else if kw(n1, "BIAS") {
+                    // The screen's zero correction, subtracted from the channel reading.
+                    // The DHO programmer manual has no header for it.
+                    if query {
+                        return Some(t(&e(ch.bias as f64)));
+                    }
+                    let Some(v) = num(arg) else {
+                        self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                        return Some(None);
+                    };
+                    ch.bias = v;
+                } else if kw(n1, "TCALibrate") {
+                    if query {
+                        return Some(t(&e(ch.skew as f64)));
+                    }
+                    // The manual refuses a deskew change on a slow time base.
+                    if slow_deskew {
+                        self.push_err("-224,\"Illegal parameter value\" timebase".into());
+                        return Some(None);
+                    }
+                    let Some(v) = num(arg).filter(|v| v.abs() <= SKEW_MAX) else {
+                        self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                        return Some(None);
+                    };
+                    ch.skew = v;
                 } else {
                     return None;
                 }
                 return Some(None);
             }
             if kw(n0, "TIMebase") {
+                let sub = nodes.get(1).copied().unwrap_or("");
+                // Delayed sweep, XY, the expand point, and fine adjust need the whole screen, not just the model.
+                if kw(sub, "DELay") || kw(sub, "XY") || kw(sub, "HREFerence") || kw(sub, "VERNier") {
+                    return None;
+                }
                 let last = *nodes.last()?;
                 if kw(last, "SCALe") {
                     if query {
                         return Some(t(&e(m.time_per_div() as f64)));
                     }
-                    m.tscale = nearest(&tscales(), num(arg)?);
-                    m.tfine = 1.0;
+                    let Some(want) = num(arg) else { return None };
+                    set_time_scale(m, want);
                     return Some(None);
                 }
                 if kw(last, "OFFSet") || kw(last, "POSition") {
@@ -581,9 +1196,6 @@ impl Scpi {
             }
             if kw(n0, "TRIGger") {
                 let last = *nodes.last()?;
-                if nodes.len() == 2 && kw(last, "MODE") {
-                    return Some(if query { t("EDGE") } else { None });
-                }
                 if nodes.len() == 2 && kw(last, "STATus") {
                     let s = match (m.run, m.status) {
                         (RunState::Stop, _) => "STOP",
@@ -657,6 +1269,18 @@ impl Scpi {
                 }
                 return None;
             }
+            if kw(n0, "ACQuire") && nodes.len() == 3 && kw(nodes[1], "ULTRa") && kw(nodes[2], "MAXFrame") {
+                if query {
+                    return Some(t(&m.segments.to_string()));
+                }
+                let Some(n) = arg.trim().parse::<usize>().ok() else {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    return Some(None);
+                };
+                let steps = crate::ui::SEGMENTS;
+                m.segments = *steps.iter().min_by_key(|s| s.abs_diff(n)).unwrap_or(&0);
+                return Some(None);
+            }
             if kw(n0, "ACQuire") && nodes.len() == 2 && !query && kw(nodes[1], "MDEPth") {
                 // AUTO or one of the depths of the Acquire menu (`mdepths`), e.g. 1000000 or 1M
                 let a = arg.trim().to_ascii_uppercase();
@@ -673,13 +1297,53 @@ impl Scpi {
                 m.mdepth = mdepths().iter().position(|d| d.1 == want)?;
                 return Some(None);
             }
-            if kw(n0, "ACQuire") && nodes.len() == 2 && query {
-                let (sr, depth) = m.srate_depth();
-                if kw(nodes[1], "SRATe") {
-                    return Some(t(&e(sr)));
+            if kw(n0, "ACQuire") && nodes.len() == 2 {
+                let n1 = nodes[1];
+                if kw(n1, "TYPE") {
+                    if query {
+                        return Some(t(match m.acq {
+                            AcqMode::Normal => "NORM",
+                            AcqMode::Peak => "PEAK",
+                            AcqMode::Average => "AVER",
+                            AcqMode::HiRes => "HRES",
+                        }));
+                    }
+                    let a = arg.trim();
+                    m.acq = if kw(a, "NORMal") {
+                        AcqMode::Normal
+                    } else if kw(a, "PEAK") {
+                        AcqMode::Peak
+                    } else if kw(a, "AVERages") {
+                        AcqMode::Average
+                    } else if kw(a, "HRESolution") || a.eq_ignore_ascii_case("HRES") {
+                        AcqMode::HiRes
+                    } else {
+                        self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                        return Some(None);
+                    };
+                    return Some(None);
                 }
-                if kw(nodes[1], "MDEPth") {
-                    return Some(t(&e(depth as f64)));
+                if kw(n1, "AVERages") {
+                    if query {
+                        return Some(t(&m.avg_count.to_string()));
+                    }
+                    // The Acquire menu's counts. A value that is not one of them snaps down to the next lower power of two.
+                    const COUNTS: [u32; 10] = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
+                    let Some(n) = arg.trim().parse::<u32>().ok().filter(|n| *n >= 2) else {
+                        self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                        return Some(None);
+                    };
+                    m.avg_count = COUNTS.iter().rev().find(|&&c| c <= n).copied().unwrap_or(2);
+                    return Some(None);
+                }
+                if query {
+                    let (sr, depth) = m.srate_depth();
+                    if kw(n1, "SRATe") {
+                        return Some(t(&e(sr)));
+                    }
+                    if kw(n1, "MDEPth") {
+                        return Some(t(&e(depth as f64)));
+                    }
                 }
                 return None;
             }
@@ -691,6 +1355,67 @@ impl Scpi {
         }
         // measurement, waveform, display, system (need the record / canvas)
         let n0 = nodes.first().copied().unwrap_or("");
+        if kw(n0, "TRIGger") && nodes.len() == 2 && kw(nodes[1], "MODE") {
+            return self.trigger_mode(ui, query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "PULSe") {
+            return self.trigger_pulse(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "SLOPe") {
+            return self.trigger_slope(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "VIDeo") {
+            return self.trigger_video(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "PATTern") {
+            return self.trigger_pattern(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "DURation") {
+            return self.trigger_duration(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "TIMeout") {
+            return self.trigger_timeout(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "RUNT") {
+            return self.trigger_runt(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && (kw(nodes[1], "WINDows") || kw(nodes[1], "WINDow")) {
+            return self.trigger_window(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "DELay") {
+            return self.trigger_delay(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && (kw(nodes[1], "SHOLd") || kw(nodes[1], "SETup")) {
+            return self.trigger_setup(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "NEDGe") {
+            return self.trigger_nth(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(suffix(nodes[1]).0, "ZONE") {
+            return self.trigger_zone(ui, suffix(nodes[1]).1, nodes[2], query, arg);
+        }
+        if kw(n0, "SEARch") {
+            return self.search_cmd(ui, &nodes[1..], query, arg);
+        }
+        if kw(n0, "RECord") {
+            return self.record_cmd(ui, &nodes[1..], query, arg);
+        }
+        if kw(n0, "NAVigate") {
+            return self.navigate_cmd(ui, &nodes[1..], query, arg);
+        }
+        let (channel, channel_n) = suffix(n0);
+        if kw(channel, "CHANnel") && nodes.len() == 2 && kw(nodes[1], "ZERO") && !query {
+            let Some(c) = channel_n.and_then(|n| n.checked_sub(1)).filter(|&c| c < NCH) else {
+                self.push_err(format!("-113,\"Undefined header\" {}", cmd));
+                return None;
+            };
+            if ui.zero_channel(c) {
+                ui.mark_changed();
+            } else {
+                self.push_err("-230,\"Data corrupt or stale\" channel has no waveform".into());
+            }
+            return None;
+        }
         if kw(n0, "MEASure") && nodes.len() == 2 && query {
             if kw(nodes[1], "ITEM") {
                 return self.meas_item(ui, arg);
@@ -703,11 +1428,140 @@ impl Scpi {
                 return t(&meas_readout(ui));
             }
         }
+        if kw(n0, "MEASure") && nodes.len() == 3 && kw(nodes[1], "STRip") && kw(nodes[2], "DOCK") {
+            if query {
+                return t(match ui.m.strip_dock {
+                    StripDock::Under => "UNDER",
+                    StripDock::Left => "LEFT",
+                    StripDock::Right => "RIGHT",
+                    StripDock::Above => "ABOVE",
+                });
+            }
+            ui.m.strip_dock = if kw(arg, "UNDer") {
+                StripDock::Under
+            } else if kw(arg, "LEFT") {
+                StripDock::Left
+            } else if kw(arg, "RIGHt") {
+                StripDock::Right
+            } else if kw(arg, "ABOVe") {
+                StripDock::Above
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.mark_changed();
+            return None;
+        }
+        if kw(n0, "MEASure") && nodes.len() >= 2 && kw(nodes[1], "COUNter") {
+            return self.counter_cmd(ui, &nodes[2..], query, arg);
+        }
         if kw(n0, "EYE") && nodes.len() == 2 && kw(nodes[1], "ITEM") && query {
             return self.eye_item(ui, arg);
         }
+        if kw(n0, "MEASure") && nodes.len() == 3 && kw(nodes[1], "BURSt") && kw(nodes[2], "IDLE") {
+            if query {
+                return t(&e(ui.m.meas_idle));
+            }
+            match arg.trim().parse::<f64>().ok().filter(|v| v.is_finite() && *v >= 0.0) {
+                Some(v) => {
+                    ui.m.meas_idle = v;
+                    ui.measure_last();
+                    ui.mark_changed();
+                }
+                None => self.push_err(format!("-224,\"Illegal parameter value\" {}", arg)),
+            }
+            return None;
+        }
+        if kw(n0, "MEASure") && nodes.len() == 3 && kw(nodes[1], "STATistic") {
+            return self.meas_stat_cmd(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "MEASure") && nodes.len() == 3 && kw(nodes[1], "SETup") {
+            let which = nodes[2];
+            if kw(which, "MAX") || kw(which, "MIN") {
+                return self.meas_threshold(ui, kw(which, "MAX"), query, arg);
+            }
+            if kw(which, "MID") {
+                // Edges are taken at half the amplitude. The middle is not a separate percent.
+                if query {
+                    return t("50");
+                }
+                if arg.trim().parse::<f64>().ok().is_some_and(|v| (v - 50.0).abs() < 1e-6) {
+                    return None;
+                }
+                self.push_err("-224,\"Illegal parameter value\" middle is 50".into());
+                return None;
+            }
+            if kw(which, "PSA") || kw(which, "DSA") || kw(which, "PSB") || kw(which, "DSB") {
+                let second = kw(which, "PSB") || kw(which, "DSB");
+                if query {
+                    return t(&wave_tok(if second { ui.meas_source_b() } else { ui.meas_source() }));
+                }
+                let Some(id) = self.named_source(arg) else { return None };
+                if second {
+                    ui.set_meas_source_b(id);
+                } else {
+                    ui.set_meas_source(id);
+                }
+                ui.mark_changed();
+                return None;
+            }
+        }
+        if kw(n0, "TIMebase") {
+            return self.timebase_more(ui, &nodes[1..], query, arg);
+        }
+        if kw(n0, "MEASure") && nodes.len() >= 3 && kw(nodes[1], "AMP") {
+            return self.meas_amp(&nodes[2..], query, arg);
+        }
+        if kw(n0, "MEASure") && nodes.len() == 3 && kw(nodes[1], "THReshold") {
+            let which = nodes[2];
+            if kw(which, "TYPE") {
+                if query {
+                    return t("PERC");
+                }
+                if kw(arg, "PERCent") {
+                    return None;
+                }
+                self.push_err("-224,\"Illegal parameter value\" percent thresholds".into());
+                return None;
+            }
+            if kw(which, "DEFault") && !query {
+                ui.m.meas_lpct = 0.1;
+                ui.m.meas_hpct = 0.9;
+                ui.measure_last();
+                ui.mark_changed();
+                return None;
+            }
+            self.push_err(format!("-113,\"Undefined header\" :MEASure:THReshold:{}", which));
+            return None;
+        }
         if kw(n0, "MEASure") && nodes.len() == 2 {
             let n1 = nodes[1];
+            if kw(n1, "SOURce") {
+                if query {
+                    return t(&wave_tok(ui.meas_source()));
+                }
+                let mut parts = arg.split(',');
+                let Some(word) = parts.next().map(str::trim).filter(|s| !s.is_empty()) else {
+                    self.push_err("-224,\"Illegal parameter value\"".into());
+                    return None;
+                };
+                let Some(a) = self.named_source(word) else { return None };
+                ui.set_meas_source(a);
+                if let Some(word) = parts.next().map(str::trim).filter(|s| !s.is_empty()) {
+                    let Some(b) = self.named_source(word) else { return None };
+                    ui.set_meas_source_b(b);
+                }
+                ui.mark_changed();
+                return None;
+            }
+            if kw(n1, "CLEar") && !query {
+                ui.meas_clear_remote();
+                ui.mark_changed();
+                return None;
+            }
+            if kw(n1, "ITEM") && !query {
+                return self.meas_place(ui, arg);
+            }
             if kw(n1, "REFS") {
                 if query {
                     let ten = ui.m.meas_lpct < 0.15 && ui.m.meas_hpct > 0.85;
@@ -719,7 +1573,7 @@ impl Scpi {
                 } else if a == "20/80" || a == "2080" || a == "20" {
                     (0.2, 0.8)
                 } else {
-                    self.err.push(format!("-224,\"Illegal parameter value\" {}", arg));
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
                     return None;
                 };
                 ui.m.meas_lpct = lo;
@@ -727,6 +1581,23 @@ impl Scpi {
                 ui.measure_last();
                 ui.mark_changed();
                 return None;
+            }
+            if kw(n1, "INDicator") {
+                return self.meas_indicator(ui, query, arg);
+            }
+            if kw(n1, "AREA") {
+                // Measurements read the main record. The zoom window does not change them.
+                if query {
+                    return t("MAIN");
+                }
+                if kw(arg, "MAIN") {
+                    return None;
+                }
+                self.push_err("-224,\"Illegal parameter value\" measurements use the main record".into());
+                return None;
+            }
+            if kw(n1, "OUTSide") || kw(n1, "NPERiods") || kw(n1, "EDGes") {
+                return self.meas_gate(ui, n1, query, arg);
             }
             if kw(n1, "TSETup") || kw(n1, "THOLd") {
                 let setup = kw(n1, "TSETup");
@@ -742,7 +1613,7 @@ impl Scpi {
                         }
                         ui.mark_changed();
                     }
-                    None => self.err.push(format!("-224,\"Illegal parameter value\" {}", arg)),
+                    None => self.push_err(format!("-224,\"Illegal parameter value\" {}", arg)),
                 }
                 return None;
             }
@@ -755,7 +1626,7 @@ impl Scpi {
                 let src = match self.waves(arg) {
                     Ok(v) => v,
                     Err(s) => {
-                        self.err.push(s);
+                        self.push_err(s);
                         return t("9.9E37");
                     }
                 };
@@ -763,7 +1634,7 @@ impl Scpi {
                     Ok(h) if h.is_empty() => t("9.9E37"),
                     Ok(h) => t(&h.iter().map(|(n, a)| format!("{},{}", n, e(*a))).collect::<Vec<_>>().join(";")),
                     Err(()) => {
-                        self.err.push("-224,\"Illegal parameter value\"".into());
+                        self.push_err("-224,\"Illegal parameter value\"".into());
                         t("9.9E37")
                     }
                 };
@@ -782,7 +1653,7 @@ impl Scpi {
             let src = match self.waves(arg_rest(arg)) {
                 Ok(v) => v,
                 Err(s) => {
-                    self.err.push(s);
+                    self.push_err(s);
                     return t("9.9E37");
                 }
             };
@@ -790,7 +1661,7 @@ impl Scpi {
                 Ok(crate::ui::facts::Fact::Word(w)) => t(w),
                 Ok(crate::ui::facts::Fact::Num(v)) => t(&shown(v)),
                 Err(()) => {
-                    self.err.push("-224,\"Illegal parameter value\"".into());
+                    self.push_err("-224,\"Illegal parameter value\"".into());
                     t("9.9E37")
                 }
             };
@@ -810,15 +1681,25 @@ impl Scpi {
                 if let Some(id) = parse_wave(arg) {
                     self.wav_src = id;
                 } else if !arg.is_empty() {
-                    self.err.push(format!("-224,\"Illegal parameter value\" {}", arg));
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
                 }
                 return None;
             }
             if kw(n1, "MODE") {
                 if query {
-                    return t(if self.wav_raw { "RAW" } else { "NORM" });
+                    return t(["NORM", "MAX", "RAW"][self.wav_mode.min(2) as usize]);
                 }
-                self.wav_raw = arg.to_ascii_uppercase().starts_with("RAW");
+                let a = arg.trim();
+                self.wav_mode = if kw(a, "RAW") {
+                    2
+                } else if kw(a, "MAXimum") {
+                    1
+                } else if kw(a, "NORMal") {
+                    0
+                } else {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    return None;
+                };
                 return None;
             }
             if kw(n1, "FORMat") {
@@ -829,16 +1710,54 @@ impl Scpi {
                 self.wav_fmt = if a.starts_with("WORD") { 1 } else if a.starts_with("ASC") { 2 } else { 0 };
                 return None;
             }
-            let (pts, pre) = self.wave_params(ui);
-            if kw(n1, "POINts") && query {
-                return t(&format!("{}", pts));
+            if kw(n1, "STARt") || kw(n1, "STOP") {
+                let stop = kw(n1, "STOP");
+                if query {
+                    let n = self.wave_len(ui);
+                    let v = if stop { if self.wav_stop == 0 { n } else { self.wav_stop } } else { self.wav_start };
+                    return t(&v.to_string());
+                }
+                let Some(p) = arg.trim().parse::<u64>().ok().filter(|&p| p >= 1) else {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    return None;
+                };
+                if stop {
+                    self.wav_stop = p;
+                    if p < self.wav_start {
+                        self.wav_start = p;
+                    }
+                } else {
+                    self.wav_start = p;
+                    if self.wav_stop != 0 && self.wav_stop < p {
+                        self.wav_stop = p;
+                    }
+                }
+                return None;
+            }
+            if kw(n1, "POINts") {
+                if query {
+                    return t(&self.page_count(ui).to_string());
+                }
+                // Rigol: the count to read, starting at STARt. stop 0 still means "the rest" until this sets it.
+                let Some(n) = arg.trim().parse::<u64>().ok().filter(|&n| n >= 1) else {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    return None;
+                };
+                self.wav_stop = self.wav_start.saturating_add(n - 1);
+                return None;
             }
             if kw(n1, "PREamble") && query {
-                return t(&pre.0);
+                return t(&self.wave_preamble(ui));
             }
             if kw(n1, "DATA") && query {
-                return Some(self.wave_data(ui, pre.1));
+                return Some(self.wave_data(ui));
             }
+        }
+        if kw(n0, "SAVE") {
+            return self.save_cmd(ui, &nodes[1..], query, arg);
+        }
+        if kw(n0, "LOAD") {
+            return self.load_cmd(ui, &nodes[1..], query, arg);
         }
         if kw(n0, "REFerence") {
             return self.ref_cmd(ui, &nodes[1..], query, arg);
@@ -846,8 +1765,20 @@ impl Scpi {
         if kw(n0, "SIM") {
             return self.sim_cmd(ui, &nodes[1..], query, arg);
         }
+        if kw(n0, "DISPlay") && !(nodes.len() == 2 && kw(nodes[1], "DATA")) {
+            return self.display_cmd(ui, &nodes[1..], query, arg);
+        }
         if kw(n0, "DISPlay") && nodes.len() == 2 && kw(nodes[1], "DATA") && query {
-            return Some(block(&bmp(cv)));
+            let kind = arg.split_whitespace().next().unwrap_or("").trim();
+            let up = kind.to_ascii_uppercase();
+            if up.starts_with("PNG") {
+                return Some(block(&crate::store::png_of(cv)));
+            }
+            if up.is_empty() || up.starts_with("BMP") {
+                return Some(block(&bmp(cv)));
+            }
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", kind));
+            return None;
         }
         // OOS extensions: analyser view, Identify, self-calibration, Bode
         if kw(n0, "VIEW") && nodes.len() == 1 {
@@ -857,7 +1788,7 @@ impl Scpi {
             }
             match VIEWS.iter().find(|(k, _)| kw(arg, k)) {
                 Some((_, v)) => ui.set_analysis_view(*v),
-                None => self.err.push(format!("-224,\"Illegal parameter value\" {}", arg)),
+                None => self.push_err(format!("-224,\"Illegal parameter value\" {}", arg)),
             }
             return None;
         }
@@ -903,7 +1834,7 @@ impl Scpi {
                         ui.m.bode_mode = *m;
                         ui.mark_changed();
                     }
-                    None => self.err.push(format!("-224,\"Illegal parameter value\" {}", arg)),
+                    None => self.push_err(format!("-224,\"Illegal parameter value\" {}", arg)),
                 }
                 return None;
             }
@@ -914,7 +1845,7 @@ impl Scpi {
                 // one word, like the setup file keeps it
                 let a = arg.trim().trim_matches('"');
                 if a.contains(char::is_whitespace) {
-                    self.err.push(format!("-224,\"Illegal parameter value\" {}", arg));
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
                 } else {
                     ui.m.bode_addr = a.to_string();
                 }
@@ -923,7 +1854,7 @@ impl Scpi {
         }
         if suffix(n0).1.is_none_or(|n| (1..=gen_count().max(1)).contains(&n)) && kw(suffix(n0).0, "SOURce") && nodes.len() >= 2 {
             if !oos_hal::model::platform().caps.has_gen() {
-                self.err.push(format!("-241,\"Hardware missing\" no generator on the {}", oos_hal::model::platform().caps.name));
+                self.push_err(format!("-241,\"Hardware missing\" no generator on the {}", oos_hal::model::platform().caps.name));
                 return None;
             }
             // :SOURce<n> talks to generator n, whichever one the page shows
@@ -944,7 +1875,7 @@ impl Scpi {
                 }
                 match parse_bool(arg) {
                     Some(on) => ui.afg_set(Some(on), None, None, None),
-                    None => self.err.push(format!("-224,\"Illegal parameter value\" {}", arg)),
+                    None => self.push_err(format!("-224,\"Illegal parameter value\" {}", arg)),
                 }
                 return None;
             }
@@ -959,7 +1890,7 @@ impl Scpi {
                     }
                     match SHAPES.iter().position(|s| kw(a, s)) {
                         Some(i) => ui.m.afg_mod_shape = i,
-                        None => self.err.push(format!("-224,\"Illegal parameter value\" {}", arg)),
+                        None => self.push_err(format!("-224,\"Illegal parameter value\" {}", arg)),
                     }
                     return None;
                 }
@@ -977,7 +1908,7 @@ impl Scpi {
                     }
                     match ["AM", "FM", "PM"].iter().position(|k| kw(a, k)) {
                         Some(i) => ui.m.afg_mod = i + 1,
-                        None => self.err.push(format!("-224,\"Illegal parameter value\" {}", arg)),
+                        None => self.push_err(format!("-224,\"Illegal parameter value\" {}", arg)),
                     }
                     ui.afg_set(None, None, None, None);
                     return None;
@@ -988,7 +1919,7 @@ impl Scpi {
                     }
                     match parse_bool(arg) {
                         Some(on) => ui.m.afg_mod = if on { ui.m.afg_mod.max(1) } else { 0 },
-                        None => self.err.push(format!("-224,\"Illegal parameter value\" {}", arg)),
+                        None => self.push_err(format!("-224,\"Illegal parameter value\" {}", arg)),
                     }
                     return None;
                 };
@@ -1006,7 +1937,7 @@ impl Scpi {
                         }
                         ui.afg_set(None, None, None, None);
                     }
-                    None => self.err.push(format!("-224,\"Illegal parameter value\" {}", arg)),
+                    None => self.push_err(format!("-224,\"Illegal parameter value\" {}", arg)),
                 }
                 return None;
             }
@@ -1016,15 +1947,15 @@ impl Scpi {
                 if has("DATA") && !query {
                     let v: Vec<f32> = arg.split(',').filter_map(num).collect();
                     if !ui.afg_arb_load(&v) {
-                        self.err.push(format!("-224,\"Illegal parameter value\" {} samples", v.len()));
+                        self.push_err(format!("-224,\"Illegal parameter value\" {} samples", v.len()));
                     }
                 } else if has("CAPTure") && !query {
                     match parse_ch(arg).ok_or("no channel".to_string()).and_then(|c| ui.afg_arb_capture(c)) {
                         Ok(_) => {}
-                        Err(e) => self.err.push(format!("-224,\"Illegal parameter value\" {}", e)),
+                        Err(e) => self.push_err(format!("-224,\"Illegal parameter value\" {}", e)),
                     }
                 } else {
-                    self.err.push("-113,\"Undefined header\" :SOURce:ARB".into());
+                    self.push_err("-113,\"Undefined header\" :SOURce:ARB".into());
                 }
                 return None;
             }
@@ -1036,7 +1967,7 @@ impl Scpi {
                 match x {
                     Some(v) if duty => ui.m.afg_duty = v.clamp(5.0, 95.0),
                     Some(v) => ui.m.afg_symmetry = v.clamp(0.0, 100.0),
-                    None => self.err.push(format!("-224,\"Illegal parameter value\" {}", arg)),
+                    None => self.push_err(format!("-224,\"Illegal parameter value\" {}", arg)),
                 }
                 return None;
             }
@@ -1051,7 +1982,7 @@ impl Scpi {
                         ui.m.afg_wave = i;
                         ui.afg_set(None, None, None, None);
                     }
-                    None => self.err.push(format!("-224,\"Illegal parameter value\" {}", arg)),
+                    None => self.push_err(format!("-224,\"Illegal parameter value\" {}", arg)),
                 }
                 return None;
             }
@@ -1070,7 +2001,7 @@ impl Scpi {
                 }
                 match x {
                     Some(v) => ui.afg_set(None, (want == 0).then_some(v), (want == 1).then_some(v), (want == 2).then_some(v)),
-                    None => self.err.push(format!("-224,\"Illegal parameter value\" {}", arg)),
+                    None => self.push_err(format!("-224,\"Illegal parameter value\" {}", arg)),
                 }
                 return None;
             }
@@ -1081,14 +2012,14 @@ impl Scpi {
                 let r = arg.split_once('=').ok_or("no '='".to_string()).and_then(|(k, v)| crate::store::set(&mut ui.m, k.trim(), v.trim()));
                 match r {
                     Ok(()) => ui.mark_changed(),
-                    Err(e) => self.err.push(format!("-224,\"Illegal parameter value\" {}", e)),
+                    Err(e) => self.push_err(format!("-224,\"Illegal parameter value\" {}", e)),
                 }
                 // a setup file may hold keys of newer versions, here a typo must not pass for a setting; the keys that
                 // are only written when they differ from their default do not show
                 let k = arg.split('=').next().unwrap_or("").trim();
                 let optional = ["vfine", "unit", "bias", "skew", "label", "tfine"].iter().any(|s| k.ends_with(s)) || k.starts_with("math_expr");
                 if !optional && !crate::store::setup_text(&ui.m).lines().any(|l| l.split('=').next().unwrap_or("").trim() == k) {
-                    self.err.push(format!("-224,\"Illegal parameter value\" unknown key {}", k));
+                    self.push_err(format!("-224,\"Illegal parameter value\" unknown key {}", k));
                 }
                 return None;
             }
@@ -1103,7 +2034,7 @@ impl Scpi {
             if kw(nodes[1], "LOG") && !query {
                 match parse_bool(arg) {
                     Some(on) => ui.log_set(on),
-                    None => self.err.push(format!("-224,\"Illegal parameter value\" {}", arg)),
+                    None => self.push_err(format!("-224,\"Illegal parameter value\" {}", arg)),
                 }
                 return None;
             }
@@ -1114,7 +2045,2821 @@ impl Scpi {
         if kw(n0, "SYSTem") && nodes.len() == 2 && kw(nodes[1], "ERRor") && query {
             return t(&if self.err.is_empty() { "0,\"No error\"".to_string() } else { self.err.remove(0) });
         }
-        self.err.push(format!("-113,\"Undefined header\" {}", cmd));
+        if kw(n0, "CURSor") {
+            return self.cursor_cmd(ui, &nodes[1..], query, arg);
+        }
+        if kw(n0, "MASK") {
+            return self.mask_cmd(ui, &nodes[1..], query, arg);
+        }
+        if kw(n0, "HISTogram") {
+            return self.hist_cmd(ui, &nodes[1..], query, arg);
+        }
+        if let Some(k) = math_index(n0) {
+            return self.math_cmd(ui, k, &nodes[1..], query, arg);
+        }
+        if let Some(k) = bus_index(n0) {
+            return self.bus_cmd(ui, k, &nodes[1..], query, arg);
+        }
+        if kw(n0, "DVM") {
+            return self.dvm_cmd(ui, &nodes[1..], query, arg);
+        }
+        if kw(n0, "COUNter") {
+            return self.counter_cmd(ui, &nodes[1..], query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" {}", cmd));
+        None
+    }
+
+    /// The trigger-type knob, including a protocol trigger by the decoder's name.
+    fn trigger_mode(&mut self, ui: &mut Ui, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if query {
+            return t(&trig_token(ui));
+        }
+        let kind = if kw(arg, "EDGE") {
+            Some(TrigType::Edge)
+        } else if kw(arg, "PULSe") {
+            Some(TrigType::Pulse)
+        } else if kw(arg, "SLOPe") {
+            Some(TrigType::Slope)
+        } else if kw(arg, "VIDeo") {
+            Some(TrigType::Video)
+        } else if kw(arg, "PATTern") {
+            Some(TrigType::Pattern)
+        } else if kw(arg, "DURation") {
+            Some(TrigType::Duration)
+        } else if kw(arg, "TIMeout") {
+            Some(TrigType::Timeout)
+        } else if kw(arg, "RUNT") {
+            Some(TrigType::Runt)
+        } else if kw(arg, "WINDow") {
+            Some(TrigType::Window)
+        } else if kw(arg, "DELay") {
+            Some(TrigType::Delay)
+        } else if kw(arg, "SETup") {
+            Some(TrigType::SetupHold)
+        } else if kw(arg, "NEDGe") {
+            Some(TrigType::NthEdge)
+        } else {
+            None
+        };
+        if let Some(kind) = kind {
+            ui.trig_type_set(kind);
+            ui.mark_changed();
+            return None;
+        }
+        if let Some(p) = parse_proto(arg) {
+            ui.trig_bus_set(p);
+            ui.mark_changed();
+            return None;
+        }
+        self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+        None
+    }
+
+    /// Pulse width, polarity, source, and level. The width that the When row is not using returns -221.
+    fn trigger_pulse(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "SOURce") {
+            if query {
+                return t(&ui.m.trig_line().map_or(format!("CHAN{}", ui.m.trig_src + 1), |n| format!("D{}", n)));
+            }
+            let word = arg.trim();
+            if let Some(n) = word.to_ascii_uppercase().strip_prefix('D').and_then(|n| n.parse::<u8>().ok()).filter(|&n| n < 16) {
+                if !ui.m.la_on() {
+                    self.push_err("-224,\"Illegal parameter value\" no logic analyser".into());
+                    return None;
+                }
+                ui.m.trig_type = TrigType::Pulse;
+                ui.m.trig_la = Some(n);
+                ui.mark_changed();
+                return None;
+            }
+            let Some(c) = parse_ch(word) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Pulse;
+            ui.m.ch[c].on = true;
+            ui.m.trig_src = c;
+            ui.m.trig_la = None;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "POLarity") {
+            if query {
+                return t(if ui.m.trig_pol == Pol::Pos { "POS" } else { "NEG" });
+            }
+            ui.m.trig_type = TrigType::Pulse;
+            ui.m.trig_pol = if kw(arg, "POSitive") {
+                Pol::Pos
+            } else if kw(arg, "NEGative") {
+                Pol::Neg
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "WHEN") {
+            if query {
+                return t(match ui.m.trig_when {
+                    WhenKind::Gt => "GRE",
+                    WhenKind::Lt => "LESS",
+                    WhenKind::In => "GLES",
+                    WhenKind::Out => "OUT",
+                    WhenKind::Off => "OFF",
+                });
+            }
+            ui.m.trig_type = TrigType::Pulse;
+            ui.m.trig_when = if kw(arg, "GREater") {
+                WhenKind::Gt
+            } else if kw(arg, "LESS") {
+                WhenKind::Lt
+            } else if kw(arg, "GLESs") {
+                WhenKind::In
+            } else if kw(arg, "OUTside") {
+                WhenKind::Out
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "LEVel") {
+            if query {
+                return t(&e(ui.m.trig_level as f64));
+            }
+            let Some(v) = num(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Pulse;
+            ui.m.trig_level = v;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "UWIDth") || kw(which, "LWIDth") {
+            return self.when_width(ui, kw(which, "UWIDth"), query, arg, TrigType::Pulse);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:PULSe:{}", which));
+        None
+    }
+
+    /// Slope time between the upper and lower levels. The screen always uses both levels.
+    fn trigger_slope(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "SOURce") {
+            if query {
+                return t(&format!("CHAN{}", ui.m.trig_src + 1));
+            }
+            let Some(c) = parse_ch(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Slope;
+            ui.m.ch[c].on = true;
+            ui.m.trig_src = c;
+            ui.m.trig_la = None;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "POLarity") {
+            if query {
+                return t(match ui.m.slope {
+                    Slope::Rise => "POS",
+                    Slope::Fall => "NEG",
+                    Slope::Either => "RFAL",
+                });
+            }
+            ui.m.trig_type = TrigType::Slope;
+            ui.m.slope = if kw(arg, "POSitive") {
+                Slope::Rise
+            } else if kw(arg, "NEGative") {
+                Slope::Fall
+            } else if kw(arg, "RFAL") || kw(arg, "EITHer") {
+                Slope::Either
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "WHEN") {
+            if query {
+                return t(match ui.m.trig_when {
+                    WhenKind::Gt => "GRE",
+                    WhenKind::Lt => "LESS",
+                    WhenKind::In => "GLES",
+                    WhenKind::Out => "OUT",
+                    WhenKind::Off => "OFF",
+                });
+            }
+            ui.m.trig_type = TrigType::Slope;
+            ui.m.trig_when = if kw(arg, "GREater") {
+                WhenKind::Gt
+            } else if kw(arg, "LESS") {
+                WhenKind::Lt
+            } else if kw(arg, "GLESs") {
+                WhenKind::In
+            } else if kw(arg, "OUTside") {
+                WhenKind::Out
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "WINDow") {
+            if query {
+                return t("TAB");
+            }
+            if kw(arg, "TAB") {
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" both levels are set".into());
+            return None;
+        }
+        if kw(which, "ALEVel") || kw(which, "BLEVel") {
+            let high = kw(which, "ALEVel");
+            if query {
+                return t(&e(if high { ui.m.trig_level } else { ui.m.trig_level2 } as f64));
+            }
+            let Some(v) = num(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Slope;
+            if high {
+                ui.m.trig_level = v;
+            } else {
+                ui.m.trig_level2 = v;
+            }
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "TUPPer") || kw(which, "TLOWer") {
+            return self.when_width(ui, kw(which, "TUPPer"), query, arg, TrigType::Slope);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:SLOPe:{}", which));
+        None
+    }
+
+    /// PAL or NTSC, the sync the screen shows, and the line number while that sync is Line.
+    fn trigger_video(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "SOURce") {
+            if query {
+                return t(&format!("CHAN{}", ui.m.trig_src + 1));
+            }
+            let Some(c) = parse_ch(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Video;
+            ui.m.ch[c].on = true;
+            ui.m.trig_src = c;
+            ui.m.trig_la = None;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "POLarity") {
+            // The hardware programs one polarity. The video menu has no polarity row.
+            if query {
+                return t("POS");
+            }
+            if kw(arg, "POSitive") {
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" video polarity is fixed".into());
+            return None;
+        }
+        if kw(which, "STANdard") {
+            if query {
+                return t(if ui.m.video_std == VideoStd::Pal { "PALS" } else { "NTSC" });
+            }
+            let std = if kw(arg, "PALSecam") || arg.trim().eq_ignore_ascii_case("PAL") {
+                Some(VideoStd::Pal)
+            } else if kw(arg, "NTSC") {
+                Some(VideoStd::Ntsc)
+            } else {
+                None
+            };
+            let Some(std) = std else {
+                self.push_err("-224,\"Illegal parameter value\" pal or ntsc".into());
+                return None;
+            };
+            ui.m.trig_type = TrigType::Video;
+            ui.m.video_std = std;
+            let max = video_line_max(std);
+            if ui.m.video_line > max {
+                ui.m.video_line = max;
+            }
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "MODE") {
+            if query {
+                return t(match ui.m.video_sync {
+                    VSync::AllLines => "ALIN",
+                    VSync::Line => "LINE",
+                    VSync::Odd => "ODDF",
+                    VSync::Even => "EVEN",
+                    VSync::AllFields => "FIELD",
+                });
+            }
+            let sync = if kw(arg, "ALINes") {
+                Some(VSync::AllLines)
+            } else if kw(arg, "LINE") {
+                Some(VSync::Line)
+            } else if kw(arg, "ODDField") {
+                Some(VSync::Odd)
+            } else if kw(arg, "EVENfield") {
+                Some(VSync::Even)
+            } else if kw(arg, "FIELds") {
+                Some(VSync::AllFields)
+            } else {
+                None
+            };
+            let Some(sync) = sync else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Video;
+            ui.m.video_sync = sync;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "LINE") {
+            if ui.m.video_sync != VSync::Line {
+                self.push_err("-221,\"Settings conflict\"".into());
+                return if query { t("9.9E37") } else { None };
+            }
+            if query {
+                return t(&ui.m.video_line.to_string());
+            }
+            let max = video_line_max(ui.m.video_std);
+            let Some(n) = arg.trim().parse::<u32>().ok().filter(|&n| (1..=max).contains(&n)) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Video;
+            ui.m.video_line = n;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "LEVel") {
+            if query {
+                return t(&e(ui.m.trig_level as f64));
+            }
+            let Some(v) = num(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Video;
+            ui.m.trig_level = v;
+            ui.mark_changed();
+            return None;
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:VIDeo:{}", which));
+        None
+    }
+
+    /// H, L, X, rise, or fall on each analog channel. A second edge becomes X, which is the edge the trigger keeps.
+    fn trigger_pattern(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "PATTern") {
+            if query {
+                return t(&pattern_text(&ui.m.pat, true));
+            }
+            let Some(bits) = pattern_bits(arg, true) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Pattern;
+            ui.m.pat = bits;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "SOURce") {
+            return self.trigger_line(ui, TrigType::Pattern, query, arg);
+        }
+        if kw(which, "LEVel") {
+            return self.pattern_level(ui, TrigType::Pattern, query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:PATTern:{}", which));
+        None
+    }
+
+    /// The same channel bits without an edge, plus the time the pattern must last.
+    fn trigger_duration(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "TYPE") {
+            if query {
+                return t(&pattern_text(&ui.m.pat, false));
+            }
+            let Some(bits) = pattern_bits(arg, false) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Duration;
+            ui.m.pat = bits;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "SOURce") {
+            return self.trigger_line(ui, TrigType::Duration, query, arg);
+        }
+        if kw(which, "LEVel") {
+            return self.pattern_level(ui, TrigType::Duration, query, arg);
+        }
+        if kw(which, "WHEN") {
+            if query {
+                return t(match ui.m.trig_when {
+                    WhenKind::Gt => "GRE",
+                    WhenKind::Lt => "LESS",
+                    WhenKind::In => "GLES",
+                    WhenKind::Out | WhenKind::Off => "UNGL",
+                });
+            }
+            let w = if kw(arg, "GREater") {
+                WhenKind::Gt
+            } else if kw(arg, "LESS") {
+                WhenKind::Lt
+            } else if kw(arg, "GLESs") {
+                WhenKind::In
+            } else if kw(arg, "UNGLess") || kw(arg, "OUTSide") {
+                WhenKind::Out
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Duration;
+            ui.m.trig_when = w;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "TUPPer") {
+            return self.when_width(ui, true, query, arg, TrigType::Duration);
+        }
+        if kw(which, "TLOWer") {
+            return self.when_width(ui, false, query, arg, TrigType::Duration);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:DURation:{}", which));
+        None
+    }
+
+    /// The level source: an analog channel, or a logic line while the logic analyser is on.
+    fn trigger_line(&mut self, ui: &mut Ui, kind: TrigType, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if query {
+            return t(&ui.m.trig_line().map_or(format!("CHAN{}", ui.m.trig_src + 1), |n| format!("D{}", n)));
+        }
+        let digital = arg.trim().to_ascii_uppercase().strip_prefix('D').and_then(|n| n.parse::<u8>().ok()).filter(|&n| n < 16 && ui.m.trig_la_ok());
+        if let Some(n) = digital {
+            ui.m.trig_type = kind;
+            ui.m.trig_la = Some(n);
+            ui.mark_changed();
+            return None;
+        }
+        let Some(c) = parse_ch(arg) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = kind;
+        ui.m.ch[c].on = true;
+        ui.m.trig_src = c;
+        ui.m.trig_la = None;
+        ui.mark_changed();
+        None
+    }
+
+    /// One threshold per analog channel. The source names which channel.
+    fn pattern_level(&mut self, ui: &mut Ui, kind: TrigType, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let mut parts = arg.split(',').map(str::trim).filter(|s| !s.is_empty());
+        let Some(c) = parts.next().and_then(parse_ch) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        if query {
+            return t(&e(ui.m.pat_levels[c] as f64));
+        }
+        let Some(v) = parts.next().and_then(num) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = kind;
+        ui.m.pat_levels[c] = v;
+        ui.mark_changed();
+        None
+    }
+
+    /// A quiet stretch longer than the timeout, on one edge or on either edge.
+    fn trigger_timeout(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        if kw(which, "SOURce") {
+            return self.trigger_line(ui, TrigType::Timeout, query, arg);
+        }
+        if kw(which, "SLOPe") {
+            return self.edge_slope(ui, TrigType::Timeout, false, true, query, arg);
+        }
+        if kw(which, "TIME") {
+            return self.positive_time(ui, TrigType::Timeout, query, arg, TimeSlot::Limit);
+        }
+        if kw(which, "LEVel") {
+            return self.pair_level(ui, TrigType::Timeout, true, query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:TIMeout:{}", which));
+        None
+    }
+
+    /// A pulse that crosses one level and turns back before the other. None means any width.
+    fn trigger_runt(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "SOURce") {
+            return self.trigger_line(ui, TrigType::Runt, query, arg);
+        }
+        if kw(which, "POLarity") {
+            return self.pulse_polarity(ui, TrigType::Runt, query, arg);
+        }
+        if kw(which, "WHEN") {
+            if query {
+                return t(match ui.m.trig_when {
+                    WhenKind::Off => "NONE",
+                    WhenKind::Gt => "GRE",
+                    WhenKind::Lt => "LESS",
+                    WhenKind::In => "GLES",
+                    WhenKind::Out => "OUT",
+                });
+            }
+            let w = if kw(arg, "NONE") {
+                WhenKind::Off
+            } else if kw(arg, "GREater") {
+                WhenKind::Gt
+            } else if kw(arg, "LESS") {
+                WhenKind::Lt
+            } else if kw(arg, "GLESs") {
+                WhenKind::In
+            } else if kw(arg, "OUTSide") {
+                WhenKind::Out
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Runt;
+            ui.m.trig_when = w;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "WUPPer") {
+            return self.when_width(ui, true, query, arg, TrigType::Runt);
+        }
+        if kw(which, "WLOWer") {
+            return self.when_width(ui, false, query, arg, TrigType::Runt);
+        }
+        if kw(which, "ALEVel") {
+            return self.pair_level(ui, TrigType::Runt, true, query, arg);
+        }
+        if kw(which, "BLEVel") {
+            return self.pair_level(ui, TrigType::Runt, false, query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:RUNT:{}", which));
+        None
+    }
+
+    /// Enter, exit, or time spent inside the two levels. The edge is always either, which is how the window is drawn.
+    fn trigger_window(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "SOURce") {
+            return self.trigger_line(ui, TrigType::Window, query, arg);
+        }
+        if kw(which, "SLOPe") {
+            if query {
+                return t("RFAL");
+            }
+            if kw(arg, "RFALl") {
+                ui.m.trig_type = TrigType::Window;
+                ui.mark_changed();
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" window edge is fixed".into());
+            return None;
+        }
+        if kw(which, "POSition") {
+            if query {
+                return t(match ui.m.win_mode {
+                    WinMode::Enter => "ENT",
+                    WinMode::Exit => "EXIT",
+                    WinMode::Inside => "TIME",
+                });
+            }
+            let mode = if kw(arg, "ENTer") {
+                Some(WinMode::Enter)
+            } else if kw(arg, "EXIT") {
+                Some(WinMode::Exit)
+            } else if kw(arg, "TIME") {
+                Some(WinMode::Inside)
+            } else {
+                None
+            };
+            let Some(mode) = mode else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Window;
+            ui.m.win_mode = mode;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "TIME") || kw(which, "WHEN") {
+            if ui.m.win_mode != WinMode::Inside {
+                self.push_err("-221,\"Settings conflict\"".into());
+                return if query { t("9.9E37") } else { None };
+            }
+        }
+        if kw(which, "TIME") {
+            return self.positive_time(ui, TrigType::Window, query, arg, TimeSlot::Limit);
+        }
+        if kw(which, "WHEN") {
+            if query {
+                return t(match ui.m.trig_when {
+                    WhenKind::Gt | WhenKind::Off => "GRE",
+                    WhenKind::Lt => "LESS",
+                    WhenKind::In => "GLES",
+                    WhenKind::Out => "OUT",
+                });
+            }
+            let w = if kw(arg, "GREater") {
+                WhenKind::Gt
+            } else if kw(arg, "LESS") {
+                WhenKind::Lt
+            } else if kw(arg, "GLESs") {
+                WhenKind::In
+            } else if kw(arg, "OUTSide") {
+                WhenKind::Out
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Window;
+            ui.m.trig_when = w;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "ALEVel") {
+            return self.pair_level(ui, TrigType::Window, true, query, arg);
+        }
+        if kw(which, "BLEVel") {
+            return self.pair_level(ui, TrigType::Window, false, query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:WINDows:{}", which));
+        None
+    }
+
+    /// Source A, then source B, and how long may pass between those edges.
+    fn trigger_delay(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "SA") {
+            return self.trigger_line(ui, TrigType::Delay, query, arg);
+        }
+        if kw(which, "SB") {
+            return self.source_b(ui, TrigType::Delay, query, arg);
+        }
+        if kw(which, "ASLop") {
+            return self.edge_slope(ui, TrigType::Delay, false, true, query, arg);
+        }
+        if kw(which, "BSLop") {
+            return self.edge_slope(ui, TrigType::Delay, true, true, query, arg);
+        }
+        if kw(which, "TYPE") {
+            if query {
+                return t(match ui.m.trig_when {
+                    WhenKind::Gt | WhenKind::Off => "GRE",
+                    WhenKind::Lt => "LESS",
+                    WhenKind::In => "GLES",
+                    WhenKind::Out => "GOUT",
+                });
+            }
+            let w = if kw(arg, "GREater") {
+                WhenKind::Gt
+            } else if kw(arg, "LESS") {
+                WhenKind::Lt
+            } else if kw(arg, "GLESs") {
+                WhenKind::In
+            } else if kw(arg, "GOUT") || kw(arg, "OUTSide") {
+                WhenKind::Out
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Delay;
+            ui.m.trig_when = w;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "TUPPer") {
+            return self.when_width(ui, true, query, arg, TrigType::Delay);
+        }
+        if kw(which, "TLOWer") {
+            return self.when_width(ui, false, query, arg, TrigType::Delay);
+        }
+        if kw(which, "ALEVel") {
+            return self.pair_level(ui, TrigType::Delay, true, query, arg);
+        }
+        if kw(which, "BLEVel") {
+            return self.pair_level(ui, TrigType::Delay, false, query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:DELay:{}", which));
+        None
+    }
+
+    /// Data and clock. Both the setup time and the hold time stay active.
+    fn trigger_setup(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "DSRC") {
+            return self.trigger_line(ui, TrigType::SetupHold, query, arg);
+        }
+        if kw(which, "CSRC") {
+            return self.source_b(ui, TrigType::SetupHold, query, arg);
+        }
+        if kw(which, "SLOPe") {
+            return self.edge_slope(ui, TrigType::SetupHold, true, true, query, arg);
+        }
+        if kw(which, "TYPE") {
+            if query {
+                return t("SETH");
+            }
+            if kw(arg, "SETHold") {
+                ui.m.trig_type = TrigType::SetupHold;
+                ui.mark_changed();
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" setup and hold are both active".into());
+            return None;
+        }
+        if kw(which, "STIMe") {
+            return self.positive_time(ui, TrigType::SetupHold, query, arg, TimeSlot::Setup);
+        }
+        if kw(which, "HTIMe") {
+            return self.positive_time(ui, TrigType::SetupHold, query, arg, TimeSlot::Hold);
+        }
+        if kw(which, "DLEVel") {
+            return self.pair_level(ui, TrigType::SetupHold, true, query, arg);
+        }
+        if kw(which, "CLEVel") {
+            return self.pair_level(ui, TrigType::SetupHold, false, query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:SHOLd:{}", which));
+        None
+    }
+
+    /// The edge count after a quiet stretch.
+    fn trigger_nth(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "SOURce") {
+            return self.trigger_line(ui, TrigType::NthEdge, query, arg);
+        }
+        if kw(which, "SLOPe") {
+            return self.edge_slope(ui, TrigType::NthEdge, false, true, query, arg);
+        }
+        if kw(which, "IDLE") {
+            return self.positive_time(ui, TrigType::NthEdge, query, arg, TimeSlot::Idle);
+        }
+        if kw(which, "EDGE") {
+            if query {
+                return t(&ui.m.nth_n.to_string());
+            }
+            let Some(n) = arg.trim().parse::<u32>().ok().filter(|&n| (1..=65535).contains(&n)) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::NthEdge;
+            ui.m.nth_n = n;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "LEVel") {
+            return self.pair_level(ui, TrigType::NthEdge, true, query, arg);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:NEDGe:{}", which));
+        None
+    }
+
+    /// The stored frames. Frame 1 is the oldest. Live reports the newest.
+    fn record_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let current = n.len() == 1 && kw(n[0], "CURRent") || n.len() == 2 && kw(n[0], "WREPlay") && kw(n[1], "FCURrent");
+        if current {
+            if query {
+                return t(&ui.history_frame().to_string());
+            }
+            return self.show_frame(ui, arg);
+        }
+        if n.len() == 2 && kw(n[0], "WREPlay") && kw(n[1], "FMAX") && query {
+            return t(&ui.history_len().to_string());
+        }
+        self.push_err(format!("-113,\"Undefined header\" :RECord:{}", n.join(":")));
+        None
+    }
+
+    /// Older, newer, the first frame, and the last frame.
+    fn navigate_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        if query || n.len() != 2 || !kw(n[0], "FRAMe") {
+            self.push_err(format!("-113,\"Undefined header\" :NAVigate:{}", n.join(":")));
+            return None;
+        }
+        let _ = arg;
+        let step = if kw(n[1], "NEXT") {
+            Some(1)
+        } else if kw(n[1], "BACK") {
+            Some(-1)
+        } else if kw(n[1], "STARt") {
+            Some(0)
+        } else if kw(n[1], "END") {
+            Some(0)
+        } else {
+            None
+        };
+        let Some(step) = step else {
+            self.push_err(format!("-113,\"Undefined header\" :NAVigate:FRAMe:{}", n[1]));
+            return None;
+        };
+        if ui.history_len() == 0 {
+            self.push_err("-221,\"Settings conflict\" history empty".into());
+            return None;
+        }
+        if kw(n[1], "STARt") {
+            ui.history_show(1);
+        } else if kw(n[1], "END") {
+            ui.history_show(ui.history_len());
+        } else {
+            ui.history_step(step);
+        }
+        ui.mark_changed();
+        None
+    }
+
+    fn show_frame(&mut self, ui: &mut Ui, arg: &str) -> Option<Vec<u8>> {
+        let n = ui.history_len();
+        if n == 0 {
+            self.push_err("-221,\"Settings conflict\" history empty".into());
+            return None;
+        }
+        let Some(frame) = arg.trim().parse::<usize>().ok().filter(|&k| (1..=n).contains(&k)) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.history_show(frame);
+        ui.mark_changed();
+        None
+    }
+
+    /// Mark events of the trigger already set. The screen has no separate search type.
+    fn search_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let which = n.first().copied().unwrap_or("");
+        if n.len() != 1 {
+            self.push_err(format!("-113,\"Undefined header\" :SEARch:{}", n.join(":")));
+            return None;
+        }
+        if kw(which, "STATe") {
+            if query {
+                return t(if ui.search_on { "1" } else { "0" });
+            }
+            let Some(on) = parse_bool(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.search_on = on;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "COUNt") && query {
+            let n = if ui.search_on { ui.search_events().len() } else { 0 };
+            return t(&n.to_string());
+        }
+        if kw(which, "MODE") {
+            if query {
+                return t(&trig_token(ui));
+            }
+            if names_trigger(ui, arg) {
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" search uses the trigger".into());
+            return None;
+        }
+        let events = if ui.search_on { ui.search_events() } else { Vec::new() };
+        if kw(which, "EVENt") {
+            if query {
+                let shown = if events.is_empty() { "0".to_string() } else { self.search_at.to_string() };
+                return t(&shown);
+            }
+            if !ui.search_on {
+                self.push_err("-221,\"Settings conflict\" search is off".into());
+                return None;
+            }
+            let Some(k) = arg.trim().parse::<u32>().ok().map(|k| if k == 0 { 1 } else { k }) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            if k < 1 || k as usize > events.len() {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            }
+            if ui.m.run == RunState::Run {
+                self.push_err("-221,\"Settings conflict\" stop the scope".into());
+                return None;
+            }
+            ui.go_to_time(events[k as usize - 1]);
+            self.search_at = k;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "VALue") && query {
+            if !ui.search_on || events.is_empty() {
+                self.push_err("-221,\"Settings conflict\" no search events".into());
+                return t("9.9E37");
+            }
+            let k = if arg.trim().is_empty() { self.search_at } else { arg.trim().parse::<u32>().unwrap_or(0) };
+            if k < 1 || k as usize > events.len() {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return t("9.9E37");
+            }
+            return t(&e(events[k as usize - 1]));
+        }
+        self.push_err(format!("-113,\"Undefined header\" :SEARch:{}", which));
+        None
+    }
+
+    /// Two zones. A box is two corners. A shape is three or more vertices. Rigol has no zone command; these names are Keysight's.
+    fn trigger_zone(&mut self, ui: &mut Ui, index: Option<usize>, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let Some(i) = index.and_then(|n| n.checked_sub(1)).filter(|&i| i < ui.m.zones.len()) else {
+            self.push_err("-224,\"Illegal parameter value\" zone 1 or 2".into());
+            return if query { t("9.9E37") } else { None };
+        };
+        if kw(which, "STATe") {
+            if query {
+                return t(if ui.m.zones[i].on { "1" } else { "0" });
+            }
+            let Some(on) = parse_bool(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.zones[i].on = on;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "SOURce") {
+            if query {
+                return t(&format!("CHAN{}", ui.m.zones[i].src + 1));
+            }
+            let Some(c) = parse_ch(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.zones[i].src = c;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "MODE") {
+            if query {
+                return t(if ui.m.zones[i].inside { "INT" } else { "NOT" });
+            }
+            let inside = if kw(arg, "INTersect") {
+                Some(true)
+            } else if kw(arg, "NOTintersect") {
+                Some(false)
+            } else {
+                None
+            };
+            let Some(inside) = inside else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.zones[i].inside = inside;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "PLACement") {
+            if query {
+                if ui.m.zones[i].pts.len() != 2 {
+                    self.push_err("-221,\"Settings conflict\" zone is not a box".into());
+                    return t("9.9E37");
+                }
+                return t(&point_text(&ui.m.zones[i].pts));
+            }
+            let Some(pts) = point_list(arg, 2) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.zones[i].pts = pts;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "POINts") {
+            if query {
+                if ui.m.zones[i].pts.len() < 2 {
+                    self.push_err("-221,\"Settings conflict\" zone has no outline".into());
+                    return t("9.9E37");
+                }
+                return t(&point_text(&ui.m.zones[i].pts));
+            }
+            let Some(pts) = point_list(arg, 3) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.zones[i].pts = pts;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "CLEar") && !query {
+            let src = ui.m.zones[i].src;
+            ui.m.zones[i] = crate::zone::Zone { src, ..Default::default() };
+            ui.mark_changed();
+            return None;
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:ZONE{}:{}", i + 1, which));
+        None
+    }
+
+    /// Rising, falling, or either edge. `second` is source B or the clock.
+    fn edge_slope(&mut self, ui: &mut Ui, kind: TrigType, second: bool, allow_either: bool, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let cur = if second { ui.m.trig_slope2 } else { ui.m.slope };
+        if query {
+            return t(slope_token(cur));
+        }
+        let Some(s) = parse_slope(arg, allow_either) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = kind;
+        if second {
+            ui.m.trig_slope2 = s;
+        } else {
+            ui.m.slope = s;
+        }
+        ui.mark_changed();
+        None
+    }
+
+    fn pulse_polarity(&mut self, ui: &mut Ui, kind: TrigType, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if query {
+            return t(if ui.m.trig_pol == Pol::Pos { "POS" } else { "NEG" });
+        }
+        let pol = if kw(arg, "POSitive") {
+            Some(Pol::Pos)
+        } else if kw(arg, "NEGative") {
+            Some(Pol::Neg)
+        } else {
+            None
+        };
+        let Some(pol) = pol else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = kind;
+        ui.m.trig_pol = pol;
+        ui.mark_changed();
+        None
+    }
+
+    /// Upper is the screen's first level. Lower is the second level.
+    fn pair_level(&mut self, ui: &mut Ui, kind: TrigType, upper: bool, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let cur = if upper { ui.m.trig_level } else { ui.m.trig_level2 };
+        if query {
+            return t(&e(cur as f64));
+        }
+        let Some(v) = num(arg) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = kind;
+        if upper {
+            ui.m.trig_level = v;
+        } else {
+            ui.m.trig_level2 = v;
+        }
+        ui.mark_changed();
+        None
+    }
+
+    /// A time the screen stores in seconds.
+    fn positive_time(&mut self, ui: &mut Ui, kind: TrigType, query: bool, arg: &str, slot: TimeSlot) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let cur = match slot {
+            TimeSlot::Limit => ui.m.trig_t1,
+            TimeSlot::Setup => ui.m.setup,
+            TimeSlot::Hold => ui.m.hold,
+            TimeSlot::Idle => ui.m.nth_idle,
+        };
+        if query {
+            return t(&e(cur as f64));
+        }
+        let Some(v) = num(arg).filter(|&v| v > 0.0) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = kind;
+        match slot {
+            TimeSlot::Limit => ui.m.trig_t1 = v,
+            TimeSlot::Setup => ui.m.setup = v,
+            TimeSlot::Hold => ui.m.hold = v,
+            TimeSlot::Idle => ui.m.nth_idle = v,
+        }
+        ui.mark_changed();
+        None
+    }
+
+    /// Source B or the clock. Analog channels only, which is the source knob.
+    fn source_b(&mut self, ui: &mut Ui, kind: TrigType, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if query {
+            return t(&format!("CHAN{}", ui.m.trig_src2 + 1));
+        }
+        let Some(c) = parse_ch(arg) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = kind;
+        ui.m.ch[c].on = true;
+        ui.m.trig_src2 = c;
+        ui.mark_changed();
+        None
+    }
+
+    /// Upper (`upper`) or lower time limit for a pulse, a slope, a duration, a runt, or a delay. Greater uses the lower limit. Less uses the upper limit. Inside and outside use both. The single limit is the screen's Time.
+    fn when_width(&mut self, ui: &mut Ui, upper: bool, query: bool, arg: &str, kind: TrigType) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let uses = match ui.m.trig_when {
+            WhenKind::Gt => !upper,
+            WhenKind::Lt => upper,
+            WhenKind::In | WhenKind::Out => true,
+            WhenKind::Off => false,
+        };
+        if !uses {
+            self.push_err("-221,\"Settings conflict\"".into());
+            return if query { t("9.9E37") } else { None };
+        }
+        let read = if matches!(ui.m.trig_when, WhenKind::In | WhenKind::Out) {
+            if upper { ui.m.trig_t2 } else { ui.m.trig_t1 }
+        } else {
+            ui.m.trig_t1
+        };
+        if query {
+            return t(&e(read as f64));
+        }
+        let Some(v) = num(arg).filter(|&v| v > 0.0) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.m.trig_type = kind;
+        if matches!(ui.m.trig_when, WhenKind::In | WhenKind::Out) {
+            if upper {
+                if ui.m.trig_t1 > v {
+                    ui.m.trig_t1 = v;
+                }
+                ui.m.trig_t2 = v;
+            } else {
+                if ui.m.trig_t2 < v {
+                    ui.m.trig_t2 = v;
+                }
+                ui.m.trig_t1 = v;
+            }
+        } else {
+            ui.m.trig_t1 = v;
+        }
+        ui.mark_changed();
+        None
+    }
+
+    /// Top and base come from the histogram. AUTO and MAXMin are not on this screen.
+    fn meas_amp(&mut self, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if n.len() == 1 && kw(n[0], "TYPE") {
+            if query {
+                return t("MAN");
+            }
+            if kw(arg, "MANual") {
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" amplitude uses the histogram".into());
+            return None;
+        }
+        if n.len() == 2 && kw(n[0], "MANual") && (kw(n[1], "TOP") || kw(n[1], "BASE")) {
+            if query {
+                return t("HIST");
+            }
+            if kw(arg, "HISTogram") {
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" top and base are histogram modes".into());
+            return None;
+        }
+        self.push_err(format!("-113,\"Undefined header\" :MEASure:AMP:{}", n.join(":")));
+        None
+    }
+
+    /// `:SAVE:WAVeform`: the on-screen record, CSV or binary, the same bytes as the Storage menu.
+    /// `:SAVE:SETup`: the setup file that menu writes. An empty name is the current slot.
+    fn save_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        if !query && n.len() == 1 && kw(n[0], "WAVeform") {
+            return match ui.save_waveform_named(arg) {
+                Ok(_) => None,
+                Err(e) if e == "empty" => {
+                    self.push_err("-230,\"Data corrupt or stale\" no waveform".into());
+                    None
+                }
+                Err(e) if e == "suffix" => {
+                    self.push_err("-224,\"Illegal parameter value\" csv or bin".into());
+                    None
+                }
+                Err(e) => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", e));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && kw(n[0], "SETup") {
+            if query {
+                self.push_err("-113,\"Undefined header\" :SAVE:SETup?".into());
+                return None;
+            }
+            return self.setup_result(ui.save_setup_named(arg));
+        }
+        self.push_err(format!("-113,\"Undefined header\" :SAVE:{}", n.join(":")));
+        None
+    }
+
+    /// `:LOAD:SETup`: the Recall setup button. An empty name is the current slot. A missing file is -256.
+    fn load_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        if n.len() == 1 && kw(n[0], "SETup") {
+            if query {
+                self.push_err("-113,\"Undefined header\" :LOAD:SETup?".into());
+                return None;
+            }
+            return self.setup_result(ui.load_setup_named(arg).map(|()| std::path::PathBuf::new()));
+        }
+        self.push_err(format!("-113,\"Undefined header\" :LOAD:{}", n.join(":")));
+        None
+    }
+
+    fn setup_result(&mut self, r: Result<std::path::PathBuf, String>) -> Option<Vec<u8>> {
+        match r {
+            Ok(_) => None,
+            Err(e) if e == "missing" => {
+                self.push_err("-256,\"File name not found\"".into());
+                None
+            }
+            Err(e) if e == "slot" => {
+                self.push_err("-224,\"Illegal parameter value\" slot 1 to 9".into());
+                None
+            }
+            Err(e) if e == "suffix" => {
+                self.push_err("-224,\"Illegal parameter value\" stp or txt".into());
+                None
+            }
+            Err(e) => {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", e));
+                None
+            }
+        }
+    }
+
+    /// Upper (`high`) or lower threshold, as a percent of the waveform, the same pair `:MEASure:REFS` sets.
+    fn meas_threshold(&mut self, ui: &mut Ui, high: bool, query: bool, arg: &str) -> Option<Vec<u8>> {
+        if query {
+            let pct = if high { ui.m.meas_hpct } else { ui.m.meas_lpct };
+            return Some(format!("{}", (pct * 100.0).round() as i32).into_bytes());
+        }
+        let Some(pct) = arg.trim().parse::<f64>().ok().filter(|v| (0.0..=100.0).contains(v)) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        let frac = pct / 100.0;
+        if high {
+            if frac <= ui.m.meas_lpct {
+                self.push_err("-224,\"Illegal parameter value\" below the lower threshold".into());
+                return None;
+            }
+            ui.m.meas_hpct = frac;
+        } else {
+            if frac >= ui.m.meas_hpct {
+                self.push_err("-224,\"Illegal parameter value\" above the upper threshold".into());
+                return None;
+            }
+            ui.m.meas_lpct = frac;
+        }
+        ui.measure_last();
+        ui.mark_changed();
+        None
+    }
+
+    fn meas_stat_cmd(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "DISPlay") {
+            if query {
+                return t(if ui.stats_shown() { "1" } else { "0" });
+            }
+            return match parse_bool(arg) {
+                Some(on) => {
+                    ui.set_stats_shown(on);
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if kw(which, "RESet") && !query {
+            ui.stats_reset();
+            ui.mark_changed();
+            return None;
+        }
+        if !kw(which, "ITEM") {
+            self.push_err(format!("-113,\"Undefined header\" :MEASure:STATistic:{}", which));
+            return None;
+        }
+        let mut parts = arg.split(',').map(str::trim).filter(|s| !s.is_empty());
+        let first = parts.next().unwrap_or("");
+        if !query {
+            let item = first;
+            let rest: Vec<&str> = parts.collect();
+            let before = self.err.len();
+            self.meas_place(ui, &std::iter::once(item).chain(rest).collect::<Vec<_>>().join(","));
+            if self.err.len() == before {
+                ui.set_stats_shown(true);
+                ui.mark_changed();
+            }
+            return None;
+        }
+        let kind = if kw(first, "MAXimum") {
+            0
+        } else if kw(first, "MINimum") {
+            1
+        } else if kw(first, "CURRent") {
+            2
+        } else if kw(first, "AVERages") {
+            3
+        } else if kw(first, "DEViation") {
+            4
+        } else if kw(first, "CNT") || kw(first, "COUNt") {
+            5
+        } else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", first));
+            return t("9.9E37");
+        };
+        let Some(item) = parts.next() else {
+            self.push_err("-224,\"Illegal parameter value\"".into());
+            return t("9.9E37");
+        };
+        let source = |s: &mut Self, word: Option<&str>, fallback: WaveId| -> Option<WaveId> {
+            match word.filter(|w| !w.is_empty()) {
+                None => Some(fallback),
+                Some(word) => s.named_source(word),
+            }
+        };
+        let (n, current, min, max, mean, dev) = if let Some(k) = meas_kind(item) {
+            let Some(src) = source(self, parts.next(), ui.meas_source()) else { return t("9.9E37") };
+            ui.meas_remote_stat(k, src)
+        } else if let Some(k) = pair_kind(item) {
+            let Some(a) = source(self, parts.next(), ui.meas_source()) else { return t("9.9E37") };
+            let Some(b) = source(self, parts.next(), ui.meas_source_b()) else { return t("9.9E37") };
+            ui.pair_remote_stat(k, a, b)
+        } else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", item));
+            return t("9.9E37");
+        };
+        let v = match kind {
+            0 => max,
+            1 => min,
+            2 => current,
+            3 => mean,
+            4 => dev,
+            _ => return t(&e(n as f64)),
+        };
+        t(&shown(v))
+    }
+
+    fn timebase_more(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let n0 = n.first().copied().unwrap_or("");
+        if n.len() == 1 && kw(n0, "VERNier") {
+            if query {
+                return t(if ui.m.fine_t { "1" } else { "0" });
+            }
+            return match parse_bool(arg) {
+                Some(on) => {
+                    ui.m.fine_t = on;
+                    if !on {
+                        ui.m.tfine = 1.0;
+                    }
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 2 && kw(n0, "HREFerence") && kw(n[1], "MODE") {
+            if query {
+                return t(match ui.m.h_expand {
+                    HExpand::Center => "CENT",
+                    HExpand::Left => "LB",
+                    HExpand::Right => "RB",
+                    HExpand::Trigger => "TRIG",
+                });
+            }
+            let a = arg.trim();
+            ui.m.h_expand = if kw(a, "CENTer") {
+                HExpand::Center
+            } else if a.eq_ignore_ascii_case("LB") || kw(a, "LEFT") {
+                HExpand::Left
+            } else if a.eq_ignore_ascii_case("RB") || kw(a, "RIGHt") {
+                HExpand::Right
+            } else if kw(a, "TRIGger") {
+                HExpand::Trigger
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.mark_changed();
+            return None;
+        }
+        if n.len() == 2 && kw(n0, "DELay") && kw(n[1], "ENABle") {
+            if query {
+                return t(if ui.m.zoom { "1" } else { "0" });
+            }
+            return match parse_bool(arg) {
+                Some(on) => {
+                    ui.zoom_set_remote(on);
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 2 && kw(n0, "DELay") && kw(n[1], "SCALe") {
+            if query {
+                return t(&e(tscales()[ui.m.zscale] as f64));
+            }
+            let Some(v) = num(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            let scales = tscales();
+            let mut i = nearest(&scales, v);
+            if i > ui.m.tscale {
+                i = ui.m.tscale;
+            }
+            ui.m.zscale = i;
+            ui.zoom_clamp();
+            ui.mark_changed();
+            return None;
+        }
+        if n.len() == 2 && kw(n0, "DELay") && (kw(n[1], "OFFSet") || kw(n[1], "POSition")) {
+            if query {
+                return t(&e(ui.m.zdelay as f64));
+            }
+            let Some(v) = num(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.zdelay = v;
+            ui.zoom_clamp();
+            ui.mark_changed();
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "ROLL") {
+            // Auto roll: the screen enters roll at 50 ms/div while this is on.
+            if query {
+                return t(if ui.m.auto_roll { "1" } else { "0" });
+            }
+            return match parse_bool(arg) {
+                Some(on) => {
+                    ui.m.auto_roll = on;
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && kw(n0, "MODE") {
+            // MAIN is YT. XY is the screen's XY plot. This screen has no forced roll mode; auto roll is :TIMebase:ROLL.
+            // The query names XY while that plot is on, so a controller can read the mode it just set.
+            if query {
+                return t(if ui.xy_on() { "XY" } else { "MAIN" });
+            }
+            if kw(arg, "MAIN") {
+                ui.xy_set(false);
+            } else if arg.trim().eq_ignore_ascii_case("XY") {
+                ui.xy_set(true);
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            }
+            ui.mark_changed();
+            return None;
+        }
+        if n.len() == 2 && kw(n0, "XY") && kw(n[1], "ENABle") {
+            if query {
+                return t(if ui.xy_on() { "1" } else { "0" });
+            }
+            return match parse_bool(arg) {
+                Some(on) => {
+                    ui.xy_set(on);
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 2 && kw(n0, "XY") && (kw(n[1], "X") || kw(n[1], "Y")) {
+            // The plot is CH1 against CH2. Those sources are not selectable.
+            let x = kw(n[1], "X");
+            if query {
+                return t(if x { "CHAN1" } else { "CHAN2" });
+            }
+            let want = if x { 0 } else { 1 };
+            if parse_ch(arg) == Some(want) {
+                return None;
+            }
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        }
+        if n.len() == 2 && kw(n0, "XY") && kw(n[1], "Z") {
+            if query {
+                return t(&ui.m.z_src.map(chan_token).unwrap_or_else(|| "NONE".into()));
+            }
+            if kw(arg, "NONE") || kw(arg, "OFF") {
+                ui.m.z_src = None;
+            } else if let Some(c) = parse_ch(arg) {
+                ui.m.z_src = Some(c);
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            }
+            ui.mark_changed();
+            return None;
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TIMebase:{}", n.join(":")));
+        None
+    }
+
+    /// Put a measurement on the readout. The query form stays in `meas_item`.
+    fn meas_place(&mut self, ui: &mut Ui, arg: &str) -> Option<Vec<u8>> {
+        let mut parts = arg.split(',');
+        let item = parts.next().unwrap_or("").trim();
+        if item.is_empty() {
+            self.push_err("-224,\"Illegal parameter value\"".into());
+            return None;
+        }
+        let source = |s: &mut Self, word: Option<&str>, fallback: WaveId| -> Option<WaveId> {
+            match word.map(str::trim).filter(|s| !s.is_empty()) {
+                None => Some(fallback),
+                Some(word) => s.named_source(word),
+            }
+        };
+        if let Some(k) = meas_kind(item) {
+            let Some(src) = source(self, parts.next(), ui.meas_source()) else { return None };
+            if ui.meas_add(k, src) {
+                ui.mark_changed();
+            } else {
+                self.push_err("-223,\"Too much data\"".into());
+            }
+            return None;
+        }
+        if let Some(k) = pair_kind(item) {
+            let Some(a) = source(self, parts.next(), ui.meas_source()) else { return None };
+            let Some(b) = source(self, parts.next(), ui.meas_source_b()) else { return None };
+            if ui.meas_add_pair(k, a, b) {
+                ui.mark_changed();
+            } else {
+                self.push_err("-224,\"Illegal parameter value\" sources".into());
+            }
+            return None;
+        }
+        self.push_err(format!("-224,\"Illegal parameter value\" {}", item));
+        None
+    }
+
+    fn cursor_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let n0 = n.first().copied().unwrap_or("");
+        if n.is_empty() || (n.len() == 1 && kw(n0, "MODE")) {
+            if n.is_empty() {
+                self.push_err("-113,\"Undefined header\" :CURSor".into());
+                return None;
+            }
+            if query {
+                let s = match ui.m.cursor {
+                    CursorMode::Off => "OFF",
+                    CursorMode::Time | CursorMode::Volt => "MAN",
+                    CursorMode::Track => "TRAC",
+                    CursorMode::Xy => "XY",
+                };
+                return t(s);
+            }
+            let a = arg.trim();
+            ui.m.cursor = if kw(a, "OFF") {
+                CursorMode::Off
+            } else if kw(a, "MANual") {
+                if ui.m.cursor == CursorMode::Volt { CursorMode::Volt } else { CursorMode::Time }
+            } else if kw(a, "TRACk") {
+                CursorMode::Track
+            } else if a.eq_ignore_ascii_case("XY") {
+                CursorMode::Xy
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.mark_changed();
+            return None;
+        }
+        if n.len() == 2 && kw(n0, "MEASure") && kw(n[1], "INDicator") {
+            return self.meas_indicator(ui, query, arg);
+        }
+        if n.len() == 2 && kw(n0, "MANual") && kw(n[1], "TYPE") {
+            if query {
+                return t(if ui.m.cursor == CursorMode::Volt { "AMPL" } else { "TIME" });
+            }
+            if kw(arg, "TIME") {
+                if ui.m.cursor != CursorMode::Xy {
+                    ui.m.cursor = CursorMode::Time;
+                }
+            } else if kw(arg, "AMPLitude") {
+                if ui.m.cursor != CursorMode::Xy {
+                    ui.m.cursor = CursorMode::Volt;
+                }
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            }
+            ui.mark_changed();
+            return None;
+        }
+        // Time cursors use cur_a/cur_b. Voltage cursors use them too, until both axes are set: then the screen's
+        // XY cursors keep the times in cur_a/cur_b and the voltages in cur_c/cur_d.
+        // Track cursor A follows the active channel. Cursor B follows cur_b_ch, or the active channel until set.
+        if n.len() == 2 && kw(n0, "TRACk") && kw(n[1], "MODE") {
+            // Track cursors follow a time and read the voltage there.
+            if query {
+                return t("X");
+            }
+            if kw(arg, "X") {
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" track follows time".into());
+            return None;
+        }
+        if n.len() == 2 && (kw(n0, "MANual") || kw(n0, "TRACk")) && (kw(n[1], "SOURce") || kw(n[1], "SOURce1") || kw(n[1], "SOURce2")) {
+            let second = kw(n[1], "SOURce2");
+            if query {
+                let c = if second && kw(n0, "TRACk") { ui.m.cur_b_ch.unwrap_or(ui.m.active) } else { ui.m.active };
+                return t(&format!("CHAN{}", c.min(n_ch() - 1) + 1));
+            }
+            return match parse_ch(arg) {
+                Some(c) => {
+                    ui.m.ch[c].on = true;
+                    if second && kw(n0, "TRACk") {
+                        ui.m.cur_b_ch = Some(c);
+                    } else if second && c != ui.m.active {
+                        self.push_err("-224,\"Illegal parameter value\" one manual cursor source".into());
+                        return None;
+                    } else if !second {
+                        ui.m.active = c;
+                    }
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() != 2 {
+            self.push_err(format!("-113,\"Undefined header\" :CURSor:{}", n.join(":")));
+            return None;
+        }
+        let which = n[1];
+        let xy = kw(n0, "XY");
+        let known = kw(n0, "MANual") || kw(n0, "TRACk") || xy;
+        if !known {
+            self.push_err(format!("-113,\"Undefined header\" :CURSor:{}", n.join(":")));
+            return None;
+        }
+        let x = kw(which, "CAX") || (xy && kw(which, "AX"));
+        let xb = kw(which, "CBX") || (xy && kw(which, "BX"));
+        let y = kw(which, "CAY") || (xy && kw(which, "AY"));
+        let yb = kw(which, "CBY") || (xy && kw(which, "BY"));
+        if x || xb {
+            return self.cursor_axis(ui, query, arg, true, x);
+        }
+        if y || yb {
+            return self.cursor_axis(ui, query, arg, false, y);
+        }
+        if !query {
+            self.push_err(format!("-113,\"Undefined header\" :CURSor:{}", n.join(":")));
+            return None;
+        }
+        let miss = || Some(b"9.9E37".to_vec());
+        let (ta, tb) = (ui.cursor_time_at(ui.m.cur_a), ui.cursor_time_at(ui.m.cur_b));
+        let y_of = |a: bool| {
+            if ui.m.cursor == CursorMode::Xy {
+                ui.cursor_volt_at(if a { ui.m.cur_c } else { ui.m.cur_d })
+            } else if ui.m.cursor == CursorMode::Volt {
+                ui.cursor_volt_at(if a { ui.m.cur_a } else { ui.m.cur_b })
+            } else if ui.m.cursor == CursorMode::Track {
+                let c = if a { ui.m.active } else { ui.m.cur_b_ch.unwrap_or(ui.m.active) };
+                ui.wave_at_ch(c, if a { ta } else { tb }).map(|v| v as f64).unwrap_or(f64::NAN)
+            } else if ui.m.cursor == CursorMode::Time {
+                ui.wave_at(if a { ta } else { tb }).map(|v| v as f64).unwrap_or(f64::NAN)
+            } else {
+                f64::NAN
+            }
+        };
+        if kw(which, "AXValue") {
+            return if ui.m.cursor == CursorMode::Volt || ui.m.cursor == CursorMode::Off { miss() } else { t(&e(ta)) };
+        }
+        if kw(which, "BXValue") {
+            return if ui.m.cursor == CursorMode::Volt || ui.m.cursor == CursorMode::Off { miss() } else { t(&e(tb)) };
+        }
+        if kw(which, "AYValue") {
+            return t(&shown(y_of(true)));
+        }
+        if kw(which, "BYValue") {
+            return t(&shown(y_of(false)));
+        }
+        if kw(which, "XDELta") {
+            return if matches!(ui.m.cursor, CursorMode::Time | CursorMode::Track | CursorMode::Xy) { t(&e(tb - ta)) } else { miss() };
+        }
+        if kw(which, "IXDelta") {
+            let d = (tb - ta).abs();
+            return if d > 0.0 && matches!(ui.m.cursor, CursorMode::Time | CursorMode::Track | CursorMode::Xy) { t(&e(1.0 / d)) } else { miss() };
+        }
+        if kw(which, "YDELta") {
+            let d = y_of(false) - y_of(true);
+            return t(&shown(d));
+        }
+        self.push_err(format!("-113,\"Undefined header\" :CURSor:{}", n.join(":")));
+        None
+    }
+
+    /// Horizontal (`x`) or vertical cursor. `a` is cursor A.
+    fn cursor_axis(&mut self, ui: &mut Ui, query: bool, arg: &str, x: bool, a: bool) -> Option<Vec<u8>> {
+        let place = |ui: &Ui, x: bool, a: bool| -> Option<f32> {
+            Some(match (x, ui.m.cursor) {
+                (true, CursorMode::Volt | CursorMode::Off) => return None,
+                (false, CursorMode::Time | CursorMode::Track | CursorMode::Off) => return None,
+                (false, CursorMode::Xy) => if a { ui.m.cur_c } else { ui.m.cur_d },
+                (false, CursorMode::Volt) => if a { ui.m.cur_a } else { ui.m.cur_b },
+                (true, _) => if a { ui.m.cur_a } else { ui.m.cur_b },
+            })
+        };
+        if query {
+            let Some(frac) = place(ui, x, a) else { return Some(b"9.9E37".to_vec()) };
+            let v = if x { ui.cursor_time_at(frac) } else { ui.cursor_volt_at(frac) };
+            return Some(e(v).into_bytes());
+        }
+        let Some(v) = arg.trim().parse::<f64>().ok().filter(|v| v.is_finite()) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        let frac = if x { ui.cursor_frac_time(v) } else { ui.cursor_frac_volt(v) };
+        match (x, ui.m.cursor) {
+            (true, CursorMode::Volt) => {
+                ui.m.cur_c = ui.m.cur_a;
+                ui.m.cur_d = ui.m.cur_b;
+                if a { ui.m.cur_a = frac; } else { ui.m.cur_b = frac; }
+                ui.m.cursor = CursorMode::Xy;
+            }
+            (false, CursorMode::Time | CursorMode::Track) => {
+                if a { ui.m.cur_c = frac; } else { ui.m.cur_d = frac; }
+                ui.m.cursor = CursorMode::Xy;
+            }
+            (false, CursorMode::Xy) => {
+                if a { ui.m.cur_c = frac; } else { ui.m.cur_d = frac; }
+            }
+            (true, CursorMode::Off) => {
+                if a { ui.m.cur_a = frac; } else { ui.m.cur_b = frac; }
+                ui.m.cursor = CursorMode::Time;
+            }
+            (false, CursorMode::Off) => {
+                if a { ui.m.cur_a = frac; } else { ui.m.cur_b = frac; }
+                ui.m.cursor = CursorMode::Volt;
+            }
+            (true, _) => {
+                if a { ui.m.cur_a = frac; } else { ui.m.cur_b = frac; }
+            }
+            (false, _) => {
+                if a { ui.m.cur_a = frac; } else { ui.m.cur_b = frac; }
+            }
+        }
+        ui.mark_changed();
+        None
+    }
+
+    /// Waveform drawing, persistence, brightness, and the graticule. Persistence snaps to the times the screen actually keeps.
+    fn display_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let n0 = n.first().copied().unwrap_or("");
+        if n.len() == 1 && kw(n0, "TYPE") {
+            if query {
+                return t(if ui.m.dots { "DOTS" } else { "VECT" });
+            }
+            ui.m.dots = if kw(arg, "VECTors") {
+                false
+            } else if kw(arg, "DOTS") {
+                true
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.mark_changed();
+            return None;
+        }
+        if n.len() == 2 && kw(n0, "GRADing") && kw(n[1], "TIME") {
+            if query {
+                return t(persist_token(ui.m.persist));
+            }
+            let Some(i) = persist_index(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.persist = i;
+            ui.mark_changed();
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "WBRightness") {
+            if query {
+                return t(&ui.m.intensity.to_string());
+            }
+            let Some(v) = arg.trim().parse::<u32>().ok().filter(|v| (1..=100).contains(v)) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.intensity = v.clamp(10, 100);
+            ui.mark_changed();
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "GRID") {
+            if query {
+                return t(match ui.m.grid {
+                    Grid::Full => "FULL",
+                    Grid::Light => "HALF",
+                    Grid::None => "NONE",
+                });
+            }
+            ui.m.grid = if kw(arg, "FULL") {
+                Grid::Full
+            } else if kw(arg, "HALF") {
+                Grid::Light
+            } else if kw(arg, "NONE") {
+                Grid::None
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.mark_changed();
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "GBRightness") {
+            if query {
+                return t(&ui.m.grid_bright.to_string());
+            }
+            let Some(v) = arg.trim().parse::<u32>().ok().filter(|v| (0..=100).contains(v)) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            // The screen's grid brightness starts at 10, the same floor as the waveform brightness.
+            ui.m.grid_bright = v.clamp(10, 100);
+            ui.mark_changed();
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "RULers") {
+            if query {
+                return t(if ui.m.grid_frame { "1" } else { "0" });
+            }
+            return match parse_bool(arg) {
+                Some(on) => {
+                    ui.m.grid_frame = on;
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && kw(n0, "COLor") {
+            if query {
+                return t(if ui.m.color_grade { "1" } else { "0" });
+            }
+            return match parse_bool(arg) {
+                Some(on) => {
+                    ui.m.color_grade = on;
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        self.push_err(format!("-113,\"Undefined header\" :DISPlay:{}", n.join(":")));
+        None
+    }
+
+    /// Burst idle, the side Time Outside counts, how many periods Duration N spans, and which edges it uses.
+    /// The DHO programmer manual has no header for these Measure-menu settings.
+    fn meas_gate(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "OUTSide") {
+            if query {
+                return t(match ui.m.meas_out {
+                    oos_dsp::measure::Outside::Above => "ABOV",
+                    oos_dsp::measure::Outside::Below => "BEL",
+                    oos_dsp::measure::Outside::Both => "BOTH",
+                });
+            }
+            ui.m.meas_out = if kw(arg, "ABOVe") {
+                oos_dsp::measure::Outside::Above
+            } else if kw(arg, "BELow") {
+                oos_dsp::measure::Outside::Below
+            } else if kw(arg, "BOTH") {
+                oos_dsp::measure::Outside::Both
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+        } else if kw(which, "NPERiods") {
+            if query {
+                return t(&ui.m.meas_n.to_string());
+            }
+            let Some(n) = arg.trim().parse::<u32>().ok().filter(|n| (1..=32).contains(n)) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.meas_n = n;
+        } else if kw(which, "EDGes") {
+            if query {
+                return t(if ui.m.meas_data { "DATA" } else { "CLOC" });
+            }
+            if kw(arg, "CLOCk") {
+                ui.m.meas_data = false;
+            } else if kw(arg, "DATA") {
+                ui.m.meas_data = true;
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            }
+        } else {
+            self.push_err(format!("-113,\"Undefined header\" :MEASure:{}", which));
+            return None;
+        }
+        ui.measure_last();
+        ui.mark_changed();
+        None
+    }
+
+    /// The labels the screen draws on the trace for the measurements. Both Rigol headers drive that one switch.
+    fn meas_indicator(&mut self, ui: &mut Ui, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if query {
+            return t(if ui.m.meas_labels { "1" } else { "0" });
+        }
+        match parse_bool(arg) {
+            Some(on) => {
+                ui.m.meas_labels = on;
+                ui.mark_changed();
+                None
+            }
+            None => {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                None
+            }
+        }
+    }
+
+    /// One of the four decoders. RS232 is the screen's UART. The event table is one window for every bus.
+    fn bus_cmd(&mut self, ui: &mut Ui, k: usize, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let n0 = n.first().copied().unwrap_or("");
+        let cfg = ui.m.dec_slot(k);
+        if n.len() == 1 && kw(n0, "MODE") {
+            if query {
+                return t(&proto_token(cfg.proto));
+            }
+            let Some(p) = parse_proto(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            with_bus(ui, k, |m| m.dec_proto = p);
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "DISPlay") {
+            if query {
+                return t(if cfg.on { "1" } else { "0" });
+            }
+            return match parse_bool(arg) {
+                Some(on) => {
+                    with_bus(ui, k, |m| m.dec_on = on);
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && kw(n0, "FORMat") {
+            if query {
+                return t(if cfg.ascii { "ASC" } else { "HEX" });
+            }
+            let ascii = if kw(arg, "HEX") {
+                Some(false)
+            } else if kw(arg, "ASCii") {
+                Some(true)
+            } else {
+                None
+            };
+            let Some(ascii) = ascii else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            with_bus(ui, k, |m| m.dec_ascii = ascii);
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "EVENt") {
+            if query {
+                return t(if ui.decode_table_on() { "1" } else { "0" });
+            }
+            return match parse_bool(arg) {
+                Some(on) => {
+                    ui.set_decode_table(on);
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && kw(n0, "THReshold") {
+            if query {
+                return t(&e(cfg.thr as f64));
+            }
+            let num = arg.split(',').next_back().unwrap_or("").trim();
+            let Some(v) = num.parse::<f64>().ok().filter(|v| v.is_finite()) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            with_bus(ui, k, |m| m.dec_thr = v as f32);
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "DATA") && query {
+            let prefix = format!("D{} ", k + 1);
+            let rows = ui.events_text().lines().filter(|l| l.split_once(',').is_some_and(|(_, rest)| rest.starts_with(&prefix))).collect::<Vec<_>>().join("\n");
+            let body = format!("{}\n{}", proto_token(cfg.proto), rows);
+            return Some(block(body.as_bytes()));
+        }
+        if n.len() == 2 && kw(n0, "RS232") {
+            return self.bus_rs232(ui, k, n[1], query, arg);
+        }
+        if n.len() == 3 && kw(n0, "IIC") && kw(n[2], "SOURce") && (kw(n[1], "SCLK") || kw(n[1], "SDA")) {
+            let clock = kw(n[1], "SCLK");
+            if query {
+                return t(&chan_token(if clock { cfg.src2 } else { cfg.src }));
+            }
+            let Some(c) = parse_ch(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            with_bus(ui, k, |m| {
+                m.dec_proto = Proto::I2c;
+                if clock { m.dec_src2 = c; } else { m.dec_src = c; }
+            });
+            return None;
+        }
+        if n.len() == 3 && kw(n0, "SPI") && kw(n[2], "SOURce") && (kw(n[1], "SCLK") || kw(n[1], "MOSI") || kw(n[1], "SS")) {
+            if query {
+                let s = if kw(n[1], "SCLK") {
+                    chan_token(cfg.src2)
+                } else if kw(n[1], "MOSI") {
+                    chan_token(cfg.src)
+                } else {
+                    cfg.cs.map(chan_token).unwrap_or_else(|| "OFF".into())
+                };
+                return t(&s);
+            }
+            if kw(n[1], "SS") && kw(arg, "OFF") {
+                with_bus(ui, k, |m| {
+                    m.dec_proto = Proto::Spi;
+                    m.dec_cs = None;
+                });
+                return None;
+            }
+            let Some(c) = parse_ch(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            with_bus(ui, k, |m| {
+                m.dec_proto = Proto::Spi;
+                if kw(n[1], "SCLK") {
+                    m.dec_src2 = c;
+                } else if kw(n[1], "MOSI") {
+                    m.dec_src = c;
+                } else {
+                    m.dec_cs = Some(c);
+                }
+            });
+            return None;
+        }
+        if n.len() == 2 && kw(n0, "SPI") && kw(n[1], "DBITs") {
+            if query {
+                return t(&format!("{}", cfg.bits));
+            }
+            let Some(v) = arg.trim().parse::<u32>().ok().filter(|v| (4..=32).contains(v)) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            with_bus(ui, k, |m| {
+                m.dec_proto = Proto::Spi;
+                m.dec_bits = v;
+            });
+            return None;
+        }
+        self.push_err(format!("-113,\"Undefined header\" :BUS{}:{}", k + 1, n.join(":")));
+        None
+    }
+
+    fn bus_rs232(&mut self, ui: &mut Ui, k: usize, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let cfg = ui.m.dec_slot(k);
+        if kw(which, "TX") || kw(which, "RX") {
+            let rx = kw(which, "RX");
+            if query {
+                return t(&chan_token(if rx { cfg.src2 } else { cfg.src }));
+            }
+            let Some(c) = parse_ch(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            with_bus(ui, k, |m| {
+                m.dec_proto = Proto::Uart;
+                if rx { m.dec_src2 = c; } else { m.dec_src = c; }
+            });
+            return None;
+        }
+        if kw(which, "BAUD") {
+            if query {
+                return t(&format!("{}", crate::decode::BAUDS[cfg.baud.min(crate::decode::BAUDS.len() - 1)] as u64));
+            }
+            let Some(v) = arg.trim().parse::<f64>().ok().filter(|v| v.is_finite() && *v > 0.0) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            let i = nearest_baud(v);
+            with_bus(ui, k, |m| {
+                m.dec_proto = Proto::Uart;
+                m.dec_baud = i;
+            });
+            return None;
+        }
+        if kw(which, "PARity") {
+            if query {
+                return t(match cfg.parity {
+                    oos_dsp::decode::Parity::None => "NONE",
+                    oos_dsp::decode::Parity::Odd => "ODD",
+                    oos_dsp::decode::Parity::Even => "EVEN",
+                });
+            }
+            let p = if kw(arg, "NONE") {
+                Some(oos_dsp::decode::Parity::None)
+            } else if kw(arg, "ODD") {
+                Some(oos_dsp::decode::Parity::Odd)
+            } else if kw(arg, "EVEN") {
+                Some(oos_dsp::decode::Parity::Even)
+            } else {
+                None
+            };
+            let Some(p) = p else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            with_bus(ui, k, |m| {
+                m.dec_proto = Proto::Uart;
+                m.dec_parity = p;
+            });
+            return None;
+        }
+        if kw(which, "DBITs") {
+            if query {
+                return t(&format!("{}", cfg.bits));
+            }
+            let Some(v) = arg.trim().parse::<u32>().ok().filter(|v| (5..=9).contains(v)) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            with_bus(ui, k, |m| {
+                m.dec_proto = Proto::Uart;
+                m.dec_bits = v;
+            });
+            return None;
+        }
+        self.push_err(format!("-113,\"Undefined header\" :BUS{}:RS232:{}", k + 1, which));
+        None
+    }
+
+    /// One of the eight math traces. Display off is `MathOp::Off`. A math source may be a channel or an earlier math trace.
+    fn math_cmd(&mut self, ui: &mut Ui, k: usize, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let n0 = n.first().copied().unwrap_or("");
+        if n.len() == 1 && kw(n0, "DISPlay") {
+            if query {
+                return t(if ui.m.math_ch(k).op == MathOp::Off { "0" } else { "1" });
+            }
+            return match parse_bool(arg) {
+                Some(on) => {
+                    let mut c = ui.m.math_ch(k);
+                    c.op = if on { if c.op == MathOp::Off { MathOp::Add } else { c.op } } else { MathOp::Off };
+                    put_math(ui, k, c);
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && kw(n0, "OPERator") {
+            if query {
+                return t(math_op_name(ui.m.math_ch(k).op));
+            }
+            let Some(op) = parse_math_op(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            let mut c = ui.m.math_ch(k);
+            c.op = op;
+            put_math(ui, k, c);
+            return None;
+        }
+        if n.len() == 1 && (kw(n0, "SOURce1") || kw(n0, "SOURce2")) {
+            let second = kw(n0, "SOURce2");
+            if query {
+                let c = ui.m.math_ch(k);
+                return t(&math_src_name(if second { c.b } else { c.a }));
+            }
+            let Some(src) = parse_math_src(arg, k) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            let mut c = ui.m.math_ch(k);
+            if second { c.b = src; } else { c.a = src; }
+            put_math(ui, k, c);
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "SCALe") {
+            let c = ui.m.math_ch(k);
+            if query {
+                let v = if c.op == MathOp::Fft { FFT_DB[c.scale.min(FFT_DB.len() - 1)] as f64 } else { math_scales()[c.scale.min(math_scales().len() - 1)] };
+                return t(&e(v));
+            }
+            let Some(v) = arg.trim().parse::<f64>().ok().filter(|v| v.is_finite() && *v > 0.0) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            let mut c = ui.m.math_ch(k);
+            c.scale = if c.op == MathOp::Fft {
+                nearest_step(&FFT_DB.map(|x| x as f64), v)
+            } else {
+                nearest_step(&math_scales(), v)
+            };
+            put_math(ui, k, c);
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "OFFSet") {
+            if query {
+                return t(&e(ui.m.math_ch(k).offset as f64));
+            }
+            let Some(v) = arg.trim().parse::<f64>().ok().filter(|v| v.is_finite()) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            let mut c = ui.m.math_ch(k);
+            c.offset = v.clamp(-1.0e9, 1.0e9) as f32;
+            put_math(ui, k, c);
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "EXPRession") {
+            if query {
+                return t(&ui.m.math_expr[k]);
+            }
+            let text = unquote(arg);
+            if oos_dsp::expr::Expr::parse(text).is_err() {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            }
+            ui.m.math_expr[k] = text.to_string();
+            let mut c = ui.m.math_ch(k);
+            c.op = MathOp::Expr;
+            put_math(ui, k, c);
+            return None;
+        }
+        if n.len() == 2 && kw(n0, "FFT") && kw(n[1], "SOURce") {
+            if query {
+                return t(&math_src_name(ui.m.math_ch(k).a));
+            }
+            let Some(src) = parse_ch(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            let mut c = ui.m.math_ch(k);
+            c.a = src;
+            c.op = MathOp::Fft;
+            put_math(ui, k, c);
+            return None;
+        }
+        if n.len() == 2 && kw(n0, "FFT") && kw(n[1], "WINDow") {
+            if query {
+                return t(match ui.m.math_ch(k).win {
+                    Window::Rect => "RECT",
+                    Window::Blackman => "BLAC",
+                    Window::Hann => "HANN",
+                    Window::Hamming => "HAMM",
+                    Window::Flattop => "FLAT",
+                });
+            }
+            let win = if kw(arg, "RECTangle") {
+                Window::Rect
+            } else if kw(arg, "BLACkman") {
+                Window::Blackman
+            } else if kw(arg, "HANNing") {
+                Window::Hann
+            } else if kw(arg, "HAMMing") {
+                Window::Hamming
+            } else if kw(arg, "FLATtop") {
+                Window::Flattop
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            let mut c = ui.m.math_ch(k);
+            c.win = win;
+            put_math(ui, k, c);
+            return None;
+        }
+        if n.len() == 2 && kw(n0, "FFT") && kw(n[1], "SCALe") {
+            if query {
+                let c = ui.m.math_ch(k);
+                return t(&e(FFT_DB[c.scale.min(FFT_DB.len() - 1)] as f64));
+            }
+            let Some(v) = arg.trim().parse::<f64>().ok().filter(|v| v.is_finite() && *v > 0.0) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            let mut c = ui.m.math_ch(k);
+            c.op = MathOp::Fft;
+            c.scale = nearest_step(&FFT_DB.map(|x| x as f64), v);
+            put_math(ui, k, c);
+            return None;
+        }
+        if n.len() == 2 && kw(n0, "FILTer") && kw(n[1], "TYPE") {
+            if query {
+                return t(match ui.m.math_ch(k).op {
+                    MathOp::Lpf => "LPAS",
+                    MathOp::Hpf => "HPAS",
+                    MathOp::Bpf => "BPAS",
+                    MathOp::Bsf => "BST",
+                    _ => "LPAS",
+                });
+            }
+            let op = if kw(arg, "LPASs") {
+                MathOp::Lpf
+            } else if kw(arg, "HPASs") {
+                MathOp::Hpf
+            } else if kw(arg, "BPASs") {
+                MathOp::Bpf
+            } else if kw(arg, "BSTop") {
+                MathOp::Bsf
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            let mut c = ui.m.math_ch(k);
+            c.op = op;
+            put_math(ui, k, c);
+            return None;
+        }
+        if n.len() == 2 && kw(n0, "FILTer") && (kw(n[1], "W1") || kw(n[1], "W2")) {
+            let high = kw(n[1], "W2");
+            let c = ui.m.math_ch(k);
+            let band = matches!(c.op, MathOp::Bpf | MathOp::Bsf);
+            if !c.op.has_fc() || (high && !band) {
+                if query {
+                    return t("9.9E37");
+                }
+                self.push_err("-221,\"Settings conflict\"".into());
+                return None;
+            }
+            let (lo, hi) = if band { (c.fc - c.bw / 2.0, c.fc + c.bw / 2.0) } else { (c.fc, c.fc) };
+            if query {
+                return t(&e(if high { hi } else { lo } as f64));
+            }
+            let Some(v) = arg.trim().parse::<f64>().ok().filter(|v| v.is_finite() && *v > 0.0) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            let mut c = c;
+            if band {
+                let (lo, hi) = if high { (lo, v as f32) } else { (v as f32, hi) };
+                if lo >= hi {
+                    self.push_err("-221,\"Settings conflict\"".into());
+                    return None;
+                }
+                c.fc = (lo + hi) / 2.0;
+                c.bw = hi - lo;
+            } else {
+                c.fc = v as f32;
+            }
+            put_math(ui, k, c);
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "RESet") {
+            if query {
+                self.push_err(format!("-113,\"Undefined header\" :MATH{}:RESet?", k + 1));
+                return None;
+            }
+            if ui.m.math_ch(k).op == MathOp::Off {
+                self.push_err("-221,\"Settings conflict\" math is off".into());
+                return None;
+            }
+            let prev = ui.m.math_sel;
+            if prev != k {
+                ui.m.math_select(k);
+            }
+            ui.math_autoscale();
+            if prev != k {
+                ui.m.math_select(prev);
+            }
+            ui.mark_changed();
+            return None;
+        }
+        self.push_err(format!("-113,\"Undefined header\" :MATH{}:{}", k + 1, n.join(":")));
+        None
+    }
+
+    /// Vertical or horizontal histogram of one live channel. The source is the measurement source, which is what the screen uses.
+    fn hist_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let n0 = n.first().copied().unwrap_or("");
+        if n.len() == 1 && kw(n0, "ENABle") {
+            if query {
+                return t(if ui.m.hist == Hist::Off { "0" } else { "1" });
+            }
+            return match parse_bool(arg) {
+                Some(on) => {
+                    if on && ui.m.hist == Hist::Off {
+                        ui.m.hist = Hist::Vertical;
+                    } else if !on {
+                        ui.m.hist = Hist::Off;
+                    }
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && kw(n0, "TYPE") {
+            if query {
+                return t(if ui.m.hist == Hist::Horizontal { "HOR" } else { "VERT" });
+            }
+            ui.m.hist = if kw(arg, "HORizontal") {
+                Hist::Horizontal
+            } else if kw(arg, "VERTical") {
+                Hist::Vertical
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.mark_changed();
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "SOURce") {
+            if query {
+                let c = ui.hist_source().unwrap_or(0);
+                return t(&format!("CHAN{}", c + 1));
+            }
+            return match parse_ch(arg) {
+                Some(c) => {
+                    ui.m.ch[c].on = true;
+                    ui.set_meas_source(WaveId::Ch(c));
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 2 && kw(n0, "STATistics") && kw(n[1], "RESult") && query {
+            let blank = "Sum:0,Peaks:0,Max:9.9E37,Min:9.9E37,Pk_Pk:9.9E37,Mean:9.9E37,Median:9.9E37,Mode:9.9E37,Bin width:9.9E37,Sigma:9.9E37";
+            let Some(s) = ui.hist_stat() else { return t(blank) };
+            let num = |v: f64| if v.is_finite() { e(v) } else { "9.9E37".to_string() };
+            let pk = if s.max.is_finite() && s.min.is_finite() { e(s.max - s.min) } else { "9.9E37".to_string() };
+            return t(&format!(
+                "Sum:{},Peaks:{},Max:{},Min:{},Pk_Pk:{},Mean:{},Median:{},Mode:{},Bin width:{},Sigma:{}",
+                s.sum, s.peaks, num(s.max), num(s.min), pk, num(s.mean), num(s.median), num(s.mode), num(s.bin), num(s.sigma)
+            ));
+        }
+        self.push_err(format!("-113,\"Undefined header\" :HISTogram:{}", n.join(":")));
+        None
+    }
+
+    fn mask_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let n0 = n.first().copied().unwrap_or("");
+        if n.len() == 1 && kw(n0, "ENABle") {
+            if query {
+                return t(if ui.m.mask_on { "1" } else { "0" });
+            }
+            return match parse_bool(arg) {
+                Some(on) => {
+                    ui.m.mask_on = on;
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && kw(n0, "SOURce") {
+            if query {
+                return t(&format!("CHAN{}", ui.m.mask_src.min(n_ch() - 1) + 1));
+            }
+            return match parse_ch(arg) {
+                Some(c) => {
+                    ui.m.mask_src = c;
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && (kw(n0, "X") || kw(n0, "Y")) {
+            let horizontal = kw(n0, "X");
+            if query {
+                return t(&e(if horizontal { ui.m.mask_x } else { ui.m.mask_y } as f64));
+            }
+            let Some(v) = num(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            let ok = if horizontal { ui.mask_tolerance(Some(v), None) } else { ui.mask_tolerance(None, Some(v)) };
+            if ok {
+                ui.mark_changed();
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            }
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "CREate") && !query {
+            if ui.mask_create() {
+                ui.mark_changed();
+            } else {
+                self.push_err("-230,\"Data corrupt or stale\" source has no waveform".into());
+            }
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "RESet") && !query {
+            ui.mask_counts_reset();
+            ui.mark_changed();
+            return None;
+        }
+        if n.len() == 1 && kw(n0, "OPERate") {
+            if query {
+                return t(if ui.m.mask_on && ui.m.run == RunState::Run { "RUN" } else { "STOP" });
+            }
+            if !ui.m.mask_on {
+                self.push_err("-224,\"Illegal parameter value\" mask is off".into());
+                return None;
+            }
+            let a = arg.trim();
+            if kw(a, "RUN") {
+                ui.m.run = RunState::Run;
+                if ui.m.trig_mode == TrigMode::Single {
+                    ui.m.trig_mode = TrigMode::Auto;
+                }
+                ui.mark_changed();
+                None
+            } else if kw(a, "STOP") {
+                ui.m.run = RunState::Stop;
+                ui.mark_changed();
+                None
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                None
+            }
+        } else if n.len() == 1 && query && (kw(n0, "FAILed") || kw(n0, "PASSed") || kw(n0, "TOTal")) {
+            let (pass, fail) = ui.mask_counts();
+            let n = if kw(n0, "FAILed") { fail } else if kw(n0, "PASSed") { pass } else { pass + fail };
+            t(&n.to_string())
+        } else {
+            self.push_err(format!("-113,\"Undefined header\" :MASK:{}", n.join(":")));
+            None
+        }
+    }
+
+    fn dvm_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let n0 = n.first().copied().unwrap_or("");
+        if n.len() == 1 && kw(n0, "ENABle") {
+            if query {
+                return t(if ui.m.dvm_on { "1" } else { "0" });
+            }
+            return match parse_bool(arg) {
+                Some(on) => {
+                    ui.m.dvm_on = on;
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && kw(n0, "SOURce") {
+            if query {
+                return t(&format!("CHAN{}", ui.m.dvm_src.min(n_ch() - 1) + 1));
+            }
+            return match parse_ch(arg) {
+                Some(c) => {
+                    ui.m.dvm_src = c;
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && kw(n0, "MODE") {
+            const NAMES: [&str; 3] = ["DC", "ACRMS", "ACDC"];
+            if query {
+                return t(NAMES[ui.m.dvm_mode.min(2)]);
+            }
+            let a = arg.trim();
+            let mode = if kw(a, "DC") {
+                Some(0)
+            } else if kw(a, "ACRMs") || a.eq_ignore_ascii_case("ACRMS") {
+                Some(1)
+            } else if kw(a, "ACDC") || kw(a, "ACDCrms") {
+                Some(2)
+            } else {
+                None
+            };
+            return match mode {
+                Some(m) => {
+                    ui.m.dvm_mode = m;
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && kw(n0, "CURRent") && query {
+            return t(&shown(ui.dvm_value()));
+        }
+        self.push_err(format!("-113,\"Undefined header\" :DVM:{}", n.join(":")));
+        None
+    }
+
+    fn counter_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let n0 = n.first().copied().unwrap_or("");
+        if n.len() == 1 && kw(n0, "ENABle") {
+            if query {
+                return t(if ui.m.cnt_on { "1" } else { "0" });
+            }
+            return match parse_bool(arg) {
+                Some(on) => {
+                    ui.m.cnt_on = on;
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && kw(n0, "SOURce") {
+            if query {
+                return t(&format!("CHAN{}", ui.m.cnt_src.min(n_ch() - 1) + 1));
+            }
+            return match parse_ch(arg) {
+                Some(c) => {
+                    ui.m.cnt_src = c;
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && kw(n0, "MODE") {
+            const NAMES: [&str; 3] = ["FREQ", "PER", "TOT"];
+            if query {
+                return t(NAMES[ui.m.cnt_mode.min(2)]);
+            }
+            let a = arg.trim();
+            let mode = if kw(a, "FREQuency") {
+                Some(0)
+            } else if kw(a, "PERiod") {
+                Some(1)
+            } else if kw(a, "TOTalize") {
+                Some(2)
+            } else {
+                None
+            };
+            return match mode {
+                Some(m) => {
+                    ui.m.cnt_mode = m;
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && kw(n0, "NDIGits") {
+            if query {
+                return t(&ui.m.cnt_digits.to_string());
+            }
+            return match arg.trim().parse::<u32>().ok().filter(|d| (3..=7).contains(d)) {
+                Some(d) => {
+                    ui.m.cnt_digits = d;
+                    ui.mark_changed();
+                    None
+                }
+                None => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if n.len() == 1 && query && (kw(n0, "CURRent") || kw(n0, "VALue")) {
+            return t(&shown(ui.counter_value()));
+        }
+        if n.len() == 2 && kw(n0, "TOTalize") && kw(n[1], "CLEar") && !query {
+            ui.counter_clear();
+            ui.mark_changed();
+            return None;
+        }
+        self.push_err(format!("-113,\"Undefined header\" :COUNter:{}", n.join(":")));
         None
     }
 
@@ -1125,24 +4870,81 @@ impl Scpi {
         }
     }
 
-    /// (points, (preamble string, (yinc, yorigin, yref)))
-    fn wave_params(&self, ui: &Ui) -> (usize, (String, (f64, f64, f64))) {
-        let (pts, dt, t0, vpd, offset) = match self.wav_src {
+    /// RAW, or MAXimum while stopped: the deep record. NORMal, and MAXimum while running: the screen.
+    fn wave_memory(&self, ui: &Ui) -> bool {
+        self.wav_mode == 2 || (self.wav_mode == 1 && ui.m.run == RunState::Stop)
+    }
+
+    fn wave_len(&self, ui: &Ui) -> u64 {
+        match self.wav_src {
+            WaveId::Ch(c) => ui.channel_points(c, self.wave_memory(ui)) as u64,
+            WaveId::Ref(i) => ui.ref_info(i).map(|(n, _, _, _, _)| n as u64).unwrap_or(0),
+        }
+    }
+
+    /// How many points the current STARt/STOP page holds, without copying them.
+    fn page_count(&self, ui: &Ui) -> u64 {
+        let n = self.wave_len(ui);
+        let a = self.wav_start.max(1);
+        if n == 0 || a > n {
+            return 0;
+        }
+        let b = if self.wav_stop == 0 { n } else { self.wav_stop.clamp(a, n) };
+        b - a + 1
+    }
+
+    fn wave_scale(&self, ui: &Ui) -> (f64, f64) {
+        match self.wav_src {
             WaveId::Ch(c) => {
                 let ch = &ui.m.ch[c];
-                let info = if self.wav_raw { ui.raw_info(c) } else { None };
-                let (pts, dt, t0) = info.or_else(|| ui.record_info(c)).unwrap_or((0, 0.0, 0.0));
-                (pts, dt, t0, ch.volts_per_div() as f64, ch.offset as f64)
+                (ch.volts_per_div() as f64, ch.offset as f64)
             }
-            WaveId::Ref(i) => ui.ref_info(i).unwrap_or((0, 0.0, 0.0, 1.0, 0.0)),
-        };
+            WaveId::Ref(i) => ui.ref_info(i).map(|(_, _, _, vpd, off)| (vpd, off)).unwrap_or((1.0, 0.0)),
+        }
+    }
+
+    fn y_codes(&self, vpd: f64, offset: f64) -> (f64, f64, f64) {
         let (yinc, yref) = match self.wav_fmt {
             1 => (vpd * VDIV as f64 / 60000.0, 32768.0),
             _ => (vpd * VDIV as f64 / 250.0, 128.0),
         };
         let yorg = if yinc == 0.0 { 0.0 } else { (offset / yinc).round() };
-        let pre = format!("{},0,{},1,{},{},0,{},{},{}", self.wav_fmt, pts, e(dt), e(t0), e(yinc), yorg, yref);
-        (pts, (pre, (yinc, yorg, yref)))
+        (yinc, yorg, yref)
+    }
+
+    fn wave_preamble(&self, ui: &Ui) -> String {
+        let (vpd, offset) = self.wave_scale(ui);
+        let (yinc, yorg, yref) = self.y_codes(vpd, offset);
+        let (dt, t0) = self.wave_origin(ui);
+        format!("{},0,{},1,{},{},0,{},{},{}", self.wav_fmt, self.page_count(ui), e(dt), e(t0), e(yinc), yorg, yref)
+    }
+
+    /// Sample interval and the time of the first point of the current page. Does not copy the samples.
+    fn wave_origin(&self, ui: &Ui) -> (f64, f64) {
+        let (dt, t0) = match self.wav_src {
+            WaveId::Ch(c) => ui.channel_origin(c, self.wave_memory(ui)).unwrap_or((0.0, 0.0)),
+            WaveId::Ref(i) => ui.ref_info(i).map(|(_, dt, t0, _, _)| (dt, t0)).unwrap_or((0.0, 0.0)),
+        };
+        let n = self.wave_len(ui);
+        let a = self.wav_start.max(1);
+        if n == 0 || a > n {
+            (dt, t0)
+        } else {
+            (dt, t0 + (a - 1) as f64 * dt)
+        }
+    }
+
+    /// The page `:WAVeform:DATA?` returns, and the scale of the source.
+    fn wave_page(&self, ui: &Ui) -> (Vec<f32>, f64, f64, f64, f64) {
+        let (start, stop) = (self.wav_start.max(1), self.wav_stop);
+        match self.wav_src {
+            WaveId::Ch(c) => {
+                let ch = &ui.m.ch[c];
+                let (v, dt, t0) = ui.channel_page(c, self.wave_memory(ui), start, stop).unwrap_or((Vec::new(), 0.0, 0.0));
+                (v, dt, t0, ch.volts_per_div() as f64, ch.offset as f64)
+            }
+            WaveId::Ref(i) => ui.ref_page(i, start, stop).unwrap_or((Vec::new(), 0.0, 0.0, 1.0, 0.0)),
+        }
     }
 
     /// `:LA:...` (the stock names where they exist): state, lines shown, pod thresholds, and the record of the last
@@ -1152,7 +4954,7 @@ impl Scpi {
         use crate::ui::la;
         let t = |s: String| Some(s.into_bytes());
         if !la::available() {
-            self.err.push(format!("-241,\"Hardware missing\" no logic analyser port on the {}", oos_hal::model::platform().caps.name));
+            self.push_err(format!("-241,\"Hardware missing\" no logic analyser port on the {}", oos_hal::model::platform().caps.name));
             return None;
         }
         let bad = |e: &mut Vec<String>| {
@@ -1202,7 +5004,7 @@ impl Scpi {
         }
         if n.len() == 1 && query && (kw(n[0], "POINts") || kw(n[0], "PREamble") || kw(n[0], "DATA")) {
             let Some(r) = ui.la_record() else {
-                self.err.push("-230,\"Data corrupt or stale\" no LA record".into());
+                self.push_err("-230,\"Data corrupt or stale\" no LA record".into());
                 return if kw(n[0], "DATA") { Some(block(&[])) } else { t("0".into()) };
             };
             if kw(n[0], "POINts") {
@@ -1213,7 +5015,22 @@ impl Scpi {
             }
             return Some(block(&r.words.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>()));
         }
-        self.err.push(format!("-113,\"Undefined header\" :LA:{}", n.join(":")));
+        if n.len() == 1 && kw(n[0], "SIZE") {
+            const SIZES: [&str; 3] = ["SMAL", "MED", "LARG"];
+            const NAMES: [&str; 3] = ["SMALl", "MEDium", "LARGe"];
+            if query {
+                return t(SIZES[ui.m.la.height.min(SIZES.len() - 1)].into());
+            }
+            match NAMES.iter().position(|name| kw(arg.trim(), name)) {
+                Some(i) => {
+                    ui.m.la.height = i;
+                    ui.mark_changed();
+                    return None;
+                }
+                None => return bad(&mut self.err),
+            }
+        }
+        self.push_err(format!("-113,\"Undefined header\" :LA:{}", n.join(":")));
         None
     }
 
@@ -1237,7 +5054,7 @@ impl Scpi {
         let src = match self.waves(arg_rest(arg)) {
             Ok(v) => v,
             Err(s) => {
-                self.err.push(s);
+                self.push_err(s);
                 return Some(b"9.9E37".to_vec());
             }
         };
@@ -1248,8 +5065,36 @@ impl Scpi {
         match r {
             Ok(v) => Some(shown(v).into_bytes()),
             Err(()) => {
-                self.err.push("-224,\"Illegal parameter value\"".into());
+                self.push_err("-224,\"Illegal parameter value\"".into());
                 Some(b"9.9E37".to_vec())
+            }
+        }
+    }
+
+    /// `1,CHAN1` is slot 1 and the rest `CHAN1`. A bare `ON` stays on the current slot. A bad slot number is an error.
+    /// Rigol's five reference colors. The screen's fifth color is violet; `ORANge` selects it because that is Rigol's fifth name.
+    fn ref_color_name(i: usize) -> &'static str {
+        ["GRAY", "RED", "GRE", "BLUE", "ORAN"][i.min(4)]
+    }
+
+    fn ref_pair(&mut self, ui: &Ui, arg: &str) -> (Option<usize>, String) {
+        let arg = arg.trim();
+        let (slot, rest) = if let Some((a, b)) = arg.split_once(',') {
+            (parse_slot(a), b.trim().trim_matches('"').to_string())
+        } else if arg.is_empty() {
+            (Some(ui.ref_slot()), String::new())
+        } else if let Some(i) = parse_slot(arg) {
+            (Some(i), String::new())
+        } else if arg.starts_with(|c: char| c.is_ascii_digit()) || arg.to_ascii_uppercase().starts_with('R') {
+            (None, String::new())
+        } else {
+            (Some(ui.ref_slot()), arg.trim_matches('"').to_string())
+        };
+        match slot {
+            Some(i) if i < NREF => (Some(i), rest),
+            _ => {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                (None, String::new())
             }
         }
     }
@@ -1268,25 +5113,137 @@ impl Scpi {
                     None
                 }
                 None => {
-                    self.err.push(format!("-224,\"Illegal parameter value\" {}", arg));
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
                     None
                 }
             };
         }
-        if kw(n0, "SHOW") {
+        if kw(n0, "SHOW") || kw(n0, "DISPlay") {
+            let (slot, rest) = self.ref_pair(ui, arg);
+            let Some(slot) = slot else { return None };
             if query {
-                return t(if ui.ref_shown() == Some(true) { "1" } else { "0" });
+                return t(if ui.ref_shown_slot(slot) == Some(true) { "1" } else { "0" });
             }
-            return match parse_bool(arg) {
-                Some(on) if ui.ref_show_set(on) => {
+            return match parse_bool(&rest) {
+                Some(on) if ui.ref_show_slot(slot, on) => {
                     ui.mark_changed();
                     None
                 }
                 _ => {
-                    self.err.push(format!("-224,\"Illegal parameter value\" {}", arg));
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
                     None
                 }
             };
+        }
+        if kw(n0, "CURRent") {
+            if query {
+                return t(&(ui.ref_slot() + 1).to_string());
+            }
+            return match parse_slot(arg) {
+                Some(i) if ui.ref_slot_set(i) => {
+                    ui.mark_changed();
+                    None
+                }
+                _ => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if kw(n0, "SOURce") {
+            let (slot, rest) = self.ref_pair(ui, arg);
+            let Some(slot) = slot else { return None };
+            if query {
+                return t(&format!("CHAN{}", ui.ref_source_of(slot) + 1));
+            }
+            return match parse_ch(&rest) {
+                Some(c) if ui.ref_source_set(slot, c) => {
+                    ui.mark_changed();
+                    None
+                }
+                _ => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                    None
+                }
+            };
+        }
+        if kw(n0, "VSCale") || kw(n0, "VOFFset") {
+            let scale = kw(n0, "VSCale");
+            let (slot, rest) = self.ref_pair(ui, arg);
+            let Some(slot) = slot else { return None };
+            if query {
+                let v = if scale { ui.ref_vscale(slot) } else { ui.ref_voffset(slot) };
+                return match v {
+                    Some(v) => t(&e(v as f64)),
+                    None => {
+                        self.push_err("-230,\"Data corrupt or stale\" reference is empty".into());
+                        None
+                    }
+                };
+            }
+            let Some(v) = num(&rest) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            let ok = if scale { ui.ref_vscale_set(slot, v) } else { ui.ref_voffset_set(slot, v) };
+            if ok {
+                ui.mark_changed();
+            } else {
+                self.push_err("-230,\"Data corrupt or stale\" reference is empty".into());
+            }
+            return None;
+        }
+        if n.len() >= 2 && kw(n0, "LABel") && kw(n[1], "CONTent") {
+            let (slot, rest) = self.ref_pair(ui, arg);
+            let Some(slot) = slot else { return None };
+            if query {
+                return match ui.ref_label(slot) {
+                    Some(s) => t(&s),
+                    None => {
+                        self.push_err("-230,\"Data corrupt or stale\" reference is empty".into());
+                        None
+                    }
+                };
+            }
+            if ui.ref_label_set(slot, rest) {
+                ui.mark_changed();
+            } else {
+                self.push_err("-230,\"Data corrupt or stale\" reference is empty".into());
+            }
+            return None;
+        }
+        if kw(n0, "RESet") && !query {
+            let (slot, _) = self.ref_pair(ui, arg);
+            let Some(slot) = slot else { return None };
+            if ui.ref_reset_scale(slot) {
+                ui.mark_changed();
+            } else {
+                self.push_err("-230,\"Data corrupt or stale\" reference is empty".into());
+            }
+            return None;
+        }
+        if kw(n0, "COLor") {
+            let (slot, rest) = self.ref_pair(ui, arg);
+            let Some(slot) = slot else { return None };
+            if query {
+                return match ui.ref_color(slot) {
+                    Some(i) => t(Self::ref_color_name(i)),
+                    None => {
+                        self.push_err("-230,\"Data corrupt or stale\" reference is empty".into());
+                        None
+                    }
+                };
+            }
+            let Some(i) = ref_color_index(&rest) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            if ui.ref_color_set(slot, i) {
+                ui.mark_changed();
+            } else {
+                self.push_err("-230,\"Data corrupt or stale\" reference is empty".into());
+            }
+            return None;
         }
         if kw(n0, "CLEar") && !query {
             ui.ref_clear_all();
@@ -1294,20 +5251,29 @@ impl Scpi {
             return None;
         }
         if kw(n0, "SAVE") && !query {
+            if !arg.trim().is_empty() {
+                match parse_slot(arg) {
+                    Some(i) if ui.ref_slot_set(i) => {}
+                    _ => {
+                        self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                        return None;
+                    }
+                }
+            }
             return match ui.ref_save_slot() {
                 Ok(()) => {
                     ui.mark_changed();
                     None
                 }
                 Err(e) => {
-                    self.err.push(format!("-224,\"Illegal parameter value\" {}", e));
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", e));
                     None
                 }
             };
         }
         if kw(n0, "LOAD") && !query {
             if arg.trim().is_empty() {
-                self.err.push("-224,\"Illegal parameter value\" no file".into());
+                self.push_err("-224,\"Illegal parameter value\" no file".into());
                 return None;
             }
             let r = ui.ref_load_named(arg);
@@ -1317,7 +5283,20 @@ impl Scpi {
             let r = if arg.trim().is_empty() { ui.ref_import_slot() } else { ui.ref_load_named(arg) };
             return self.ref_loaded(ui, r);
         }
-        self.err.push(format!("-113,\"Undefined header\" :REF:{}", n.join(":")));
+        if kw(n0, "EXPort") && !query {
+            return match ui.ref_export_named(arg) {
+                Ok(_) => None,
+                Err(e) if e == "empty" => {
+                    self.push_err("-230,\"Data corrupt or stale\" reference is empty".into());
+                    None
+                }
+                Err(e) => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", e));
+                    None
+                }
+            };
+        }
+        self.push_err(format!("-113,\"Undefined header\" :REF:{}", n.join(":")));
         None
     }
 
@@ -1328,11 +5307,11 @@ impl Scpi {
                 None
             }
             Err(e) if e.starts_with("missing ") => {
-                self.err.push(format!("-256,\"File name not found\" {}", e.trim_start_matches("missing ")));
+                self.push_err(format!("-256,\"File name not found\" {}", e.trim_start_matches("missing ")));
                 None
             }
             Err(e) => {
-                self.err.push(format!("-224,\"Illegal parameter value\" {}", e));
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", e));
                 None
             }
         }
@@ -1352,7 +5331,7 @@ impl Scpi {
                 "OFF" => ui.m.sim_ssc = false,
                 "DOWN" => { ui.m.sim_ssc = true; ui.m.sim_ssc_center = false; }
                 "CENTER" | "CENT" => { ui.m.sim_ssc = true; ui.m.sim_ssc_center = true; }
-                _ => { self.err.push("-224,\"Illegal parameter value\" SSC mode".into()); return None; }
+                _ => { self.push_err("-224,\"Illegal parameter value\" SSC mode".into()); return None; }
             }
             ui.mark_changed();
             return None;
@@ -1370,7 +5349,7 @@ impl Scpi {
                 if query { return t(&e(*value)); }
                 match arg.trim().parse::<f64>() {
                     Ok(v) if v.is_finite() && v >= min && v <= max => *value = v,
-                    _ => { self.err.push("-224,\"Illegal parameter value\" SIM setting".into()); return None; }
+                    _ => { self.push_err("-224,\"Illegal parameter value\" SIM setting".into()); return None; }
                 }
                 ui.mark_changed();
                 return None;
@@ -1384,7 +5363,7 @@ impl Scpi {
                 ui.m.sim_prbs = p;
                 ui.mark_changed();
             } else {
-                self.err.push("-224,\"Illegal parameter value\" PRBS order".into());
+                self.push_err("-224,\"Illegal parameter value\" PRBS order".into());
             }
             return None;
         }
@@ -1396,7 +5375,7 @@ impl Scpi {
                 ui.mark_changed();
                 None
             } else {
-                self.err.push(format!("-224,\"Illegal parameter value\" {}", arg));
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
                 None
             };
         }
@@ -1411,7 +5390,7 @@ impl Scpi {
                     None
                 }
                 None => {
-                    self.err.push(format!("-224,\"Illegal parameter value\" {}", arg));
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
                     None
                 }
             };
@@ -1425,12 +5404,12 @@ impl Scpi {
                 Some(on) => {
                     match ui.sim_play_set(on) {
                         Ok(()) => ui.mark_changed(),
-                        Err(error) => self.err.push(format!("-224,\"Illegal parameter value\" {}", error)),
+                        Err(error) => self.push_err(format!("-224,\"Illegal parameter value\" {}", error)),
                     }
                     None
                 }
                 None => {
-                    self.err.push(format!("-224,\"Illegal parameter value\" {}", arg));
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
                     None
                 }
             };
@@ -1445,33 +5424,30 @@ impl Scpi {
                     None
                 }
                 _ => {
-                    self.err.push(format!("-224,\"Illegal parameter value\" {}", arg));
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
                     None
                 }
             };
         }
-        self.err.push(format!("-113,\"Undefined header\" :SIM:{}", n.join(":")));
+        self.push_err(format!("-113,\"Undefined header\" :SIM:{}", n.join(":")));
         None
     }
 
-    fn wave_data(&self, ui: &Ui, p: (f64, f64, f64)) -> Vec<u8> {
-        let (yinc, yorg, yref) = p;
-        let v = match self.wav_src {
-            WaveId::Ch(c) => {
-                if self.wav_raw { ui.raw_volts(c).unwrap_or_else(|| ui.record_volts(c)) } else { ui.record_volts(c) }
-            }
-            WaveId::Ref(i) => ui.ref_volts(i),
-        };
+    fn wave_data(&self, ui: &Ui) -> Vec<u8> {
+        let (vpd, offset) = self.wave_scale(ui);
+        let (yinc, yorg, yref) = self.y_codes(vpd, offset);
+        let (v, _, _, _, _) = self.wave_page(ui);
         match self.wav_fmt {
             2 => {
                 let s: Vec<String> = v.iter().map(|&x| e(x as f64)).collect();
                 block(s.join(",").as_bytes())
             }
             1 => {
+                // Rigol WORD is high byte first. A 25 Mpoint read pages with STARt and STOP so this buffer is one page.
                 let mut b = Vec::with_capacity(v.len() * 2);
                 for x in v {
                     let code = ((x as f64 / yinc) + yorg + yref).round().clamp(0.0, 65535.0) as u16;
-                    b.extend_from_slice(&code.to_le_bytes());
+                    b.extend_from_slice(&code.to_be_bytes());
                 }
                 block(&b)
             }
@@ -1488,14 +5464,14 @@ impl Scpi {
         let mut parts = arg.split(',');
         let item = parts.next().unwrap_or("").trim();
         if item.is_empty() {
-            self.err.push("-224,\"Illegal parameter value\"".into());
+            self.push_err("-224,\"Illegal parameter value\"".into());
             return t("9.9E37");
         }
         if kw(item, "SETHold") || item.eq_ignore_ascii_case("SHOLD") {
             let waves = match self.waves(&parts.collect::<Vec<_>>().join(",")) {
                 Ok(waves) => waves,
                 Err(error) => {
-                    self.err.push(error);
+                    self.push_err(error);
                     return t("9.9E37");
                 }
             };
@@ -1503,7 +5479,7 @@ impl Scpi {
                 [] => ui.meas_pair_sources(),
                 [clock, data] => (*clock, *data),
                 _ => {
-                    self.err.push("-224,\"Illegal parameter value\"".into());
+                    self.push_err("-224,\"Illegal parameter value\"".into());
                     return t("9.9E37");
                 }
             };
@@ -1511,7 +5487,7 @@ impl Scpi {
         }
         // no source: CH1, as before. A word that is not CHANn or R1–R10 is an error.
         let src = match parts.next().map(str::trim).filter(|s| !s.is_empty()) {
-            None => WaveId::Ch(0),
+            None => ui.meas_source(),
             Some(s) => match self.named_source(s) {
                 Some(id) => id,
                 None => return t("9.9E37"),
@@ -1522,13 +5498,13 @@ impl Scpi {
         }
         if let Some(k) = pair_kind(item) {
             let Some(word) = parts.next().map(str::trim).filter(|s| !s.is_empty()) else {
-                self.err.push("-224,\"Illegal parameter value\"".into());
+                self.push_err("-224,\"Illegal parameter value\"".into());
                 return t("9.9E37");
             };
             let Some(b) = self.named_source(word) else { return t("9.9E37") };
             return t(&e(ui.pair_at(k, src, b)));
         }
-        self.err.push("-224,\"Illegal parameter value\"".into());
+        self.push_err("-224,\"Illegal parameter value\"".into());
         t("9.9E37")
     }
 
@@ -1536,7 +5512,7 @@ impl Scpi {
         match parse_wave(s) {
             Some(id) => Some(id),
             None => {
-                self.err.push(format!("-224,\"Illegal parameter value\" {}", s));
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", s));
                 None
             }
         }
@@ -1546,7 +5522,7 @@ impl Scpi {
     fn eye_item(&mut self, ui: &Ui, arg: &str) -> Option<Vec<u8>> {
         let item = arg.split(',').next().unwrap_or("").trim();
         let Some(name) = crate::ui::EYE_ITEMS.iter().find(|n| kw(item, n)) else {
-            self.err.push("-224,\"Illegal parameter value\"".into());
+            self.push_err("-224,\"Illegal parameter value\"".into());
             return Some(b"9.9E37".to_vec());
         };
         let v = ui.eye_readings().iter().find(|(n, _)| n == name).map(|(_, v)| *v).unwrap_or(f64::NAN);
@@ -1656,6 +5632,280 @@ mod tests {
 
     fn captures(ui: &Ui) -> f64 {
         crate::json::parse(&ui.workflow_state()).unwrap().get("captures").unwrap().num().unwrap()
+    }
+
+    #[test]
+    fn a_pulse_trigger_uses_the_screen_width_and_polarity() {
+        let (mut s, mut ui, cv) = session();
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?"), "EDGE");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE PULS");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?;:TRIG:PULS:SOUR?;:TRIG:PULS:POL?;:TRIG:PULS:WHEN?"), "PULS;CHAN4;POS;LESS");
+        let upper: f64 = line(&mut s, &mut ui, &cv, ":TRIG:PULS:UWID?").parse().unwrap();
+        assert!((upper - 30e-6).abs() < 1e-9, "{upper}");
+        line(&mut s, &mut ui, &cv, ":TRIG:PULS:LWID 1e-6");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "less-than uses the upper width");
+        line(&mut s, &mut ui, &cv, ":TRIG:PULS:UWID 5e-6;:TRIG:MODE PULS");
+        let kept: f64 = line(&mut s, &mut ui, &cv, ":TRIG:PULS:UWID?").parse().unwrap();
+        assert!((kept - 5e-6).abs() / 5e-6 < 1e-3, "the same type again keeps the width, {kept}");
+        line(&mut s, &mut ui, &cv, ":TRIG:PULS:WHEN GRE;:TRIG:PULS:LWID 4e-6;:TRIG:PULS:UWID 1e-6");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"));
+        let lower: f64 = line(&mut s, &mut ui, &cv, ":TRIG:PULS:LWID?").parse().unwrap();
+        assert!((lower - 4e-6).abs() / 4e-6 < 1e-3, "{lower}");
+        line(&mut s, &mut ui, &cv, ":TRIG:PULS:WHEN GLES;:TRIG:PULS:LWID 2e-6;:TRIG:PULS:UWID 8e-6;:TRIG:PULS:POL NEG;:TRIG:PULS:SOUR CHAN1;:TRIG:PULS:LEV 0.2");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:PULS:WHEN?;:TRIG:PULS:POL?;:TRIG:PULS:SOUR?"), "GLES;NEG;CHAN1");
+        let (lo, hi): (f64, f64) = {
+            let both = line(&mut s, &mut ui, &cv, ":TRIG:PULS:LWID?;:TRIG:PULS:UWID?");
+            let mut parts = both.split(';');
+            (parts.next().unwrap().parse().unwrap(), parts.next().unwrap().parse().unwrap())
+        };
+        assert!((lo - 2e-6).abs() < 1e-12 && (hi - 8e-6).abs() < 1e-12, "{lo} {hi}");
+        assert!((ui.m.trig_level - 0.2).abs() < 1e-6);
+        line(&mut s, &mut ui, &cv, ":TRIG:PULS:WHEN OUT");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:PULS:WHEN?"), "OUT");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE SLOP");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?;:TRIG:SLOP:POL?;:TRIG:SLOP:WHEN?;:TRIG:SLOP:SOUR?;:TRIG:SLOP:WIND?"), "SLOP;POS;GRE;CHAN1;TAB");
+        let lower: f64 = line(&mut s, &mut ui, &cv, ":TRIG:SLOP:TLOW?").parse().unwrap();
+        assert!((lower - 1e-6).abs() < 1e-12, "{lower}");
+        line(&mut s, &mut ui, &cv, ":TRIG:SLOP:TUPP 3e-6");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "greater-than uses the lower time");
+        assert!((ui.m.trig_level - 2.0).abs() < 1e-6 && (ui.m.trig_level2 - 0.5).abs() < 1e-6);
+        line(&mut s, &mut ui, &cv, ":TRIG:SLOP:WIND TA");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        line(&mut s, &mut ui, &cv, ":TRIG:SLOP:WHEN GLES;:TRIG:SLOP:TLOW 2e-6;:TRIG:SLOP:TUPP 8e-6;:TRIG:SLOP:POL NEG;:TRIG:SLOP:SOUR CHAN2;:TRIG:SLOP:ALEV 1.5;:TRIG:SLOP:BLEV 0.4");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:SLOP:WHEN?;:TRIG:SLOP:POL?;:TRIG:SLOP:SOUR?"), "GLES;NEG;CHAN2");
+        let (lo, hi): (f64, f64) = {
+            let both = line(&mut s, &mut ui, &cv, ":TRIG:SLOP:TLOW?;:TRIG:SLOP:TUPP?");
+            let mut parts = both.split(';');
+            (parts.next().unwrap().parse().unwrap(), parts.next().unwrap().parse().unwrap())
+        };
+        assert!((lo - 2e-6).abs() < 1e-12 && (hi - 8e-6).abs() < 1e-12, "{lo} {hi}");
+        assert!((ui.m.trig_level - 1.5).abs() < 1e-6 && (ui.m.trig_level2 - 0.4).abs() < 1e-6);
+        line(&mut s, &mut ui, &cv, ":TRIG:SLOP:POL RFAL");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:SLOP:POL?"), "RFAL");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE VID");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?;:TRIG:VID:SOUR?;:TRIG:VID:STAN?;:TRIG:VID:MODE?;:TRIG:VID:POL?"), "VID;CHAN2;PALS;FIELD;POS");
+        let level: f64 = line(&mut s, &mut ui, &cv, ":TRIG:VID:LEV?").parse().unwrap();
+        assert!((level - 0.15).abs() < 1e-6, "{level}");
+        line(&mut s, &mut ui, &cv, ":TRIG:VID:LINE 20");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "the line number applies when the sync is Line");
+        line(&mut s, &mut ui, &cv, ":TRIG:VID:MODE LINE;:TRIG:VID:LINE 100");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:VID:MODE?;:TRIG:VID:LINE?"), "LINE;100");
+        line(&mut s, &mut ui, &cv, ":TRIG:VID:STAN NTSC;:TRIG:VID:LINE 400");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:VID:LINE?"), "100");
+        line(&mut s, &mut ui, &cv, ":TRIG:VID:MODE ODDF;:TRIG:VID:POL NEG;:TRIG:VID:STAN 720P60");
+        let err = line(&mut s, &mut ui, &cv, ":SYST:ERR?");
+        assert!(err.starts_with("-224"), "{err}");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"), "720p is not a standard on this screen");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:VID:MODE?;:TRIG:VID:STAN?;:TRIG:VID:POL?"), "ODDF;NTSC;POS");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE PATT");
+        let fresh: Vec<&str> = (0..NCH).map(|i| if i == 0 { "H" } else if i + 1 == NCH { "R" } else { "X" }).collect();
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?;:TRIG:PATT:PATT?;:TRIG:PATT:SOUR?"), format!("PATT;{};CHAN1", fresh.join(",")));
+        line(&mut s, &mut ui, &cv, ":TRIG:PATT:PATT H,R,L,F");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:PATT:PATT?"), "H,R,L,X");
+        line(&mut s, &mut ui, &cv, ":TRIG:PATT:SOUR CHAN3;:TRIG:PATT:LEV CHAN2,0.16");
+        let level: f64 = line(&mut s, &mut ui, &cv, ":TRIG:PATT:LEV? CHAN2").parse().unwrap();
+        assert!((level - 0.16).abs() < 1e-6, "{level}");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:PATT:SOUR?"), "CHAN3");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE DUR");
+        let held: Vec<&str> = (0..NCH).map(|i| if i == 0 { "H" } else { "X" }).collect();
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:DUR:TYPE?;:TRIG:DUR:WHEN?"), format!("{};GRE", held.join(",")));
+        line(&mut s, &mut ui, &cv, ":TRIG:DUR:TUPP 1e-6");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "greater uses the lower time");
+        let lower: f64 = line(&mut s, &mut ui, &cv, ":TRIG:DUR:TLOW?").parse().unwrap();
+        assert!((lower - 200e-6).abs() < 1e-12, "{lower}");
+        line(&mut s, &mut ui, &cv, ":TRIG:DUR:TYPE L,X,H,L;:TRIG:DUR:WHEN GLES;:TRIG:DUR:TLOW 2e-6;:TRIG:DUR:TUPP 8e-6");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:DUR:TYPE?;:TRIG:DUR:WHEN?"), "L,X,H,L;GLES");
+        line(&mut s, &mut ui, &cv, ":TRIG:DUR:TYPE H,R,X,X");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE EDGE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?"), "EDGE");
+    }
+
+    #[test]
+    fn timeout_runt_window_delay_setup_and_nth_edge_follow_the_screen() {
+        let (mut s, mut ui, cv) = session();
+        let near = |got: f64, want: f64| (got - want).abs() < 1e-6;
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE TIM");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?;:TRIG:TIM:SOUR?;:TRIG:TIM:SLOP?"), "TIM;CHAN1;POS");
+        let (time, level): (f64, f64) = {
+            let r = line(&mut s, &mut ui, &cv, ":TRIG:TIM:TIME?;:TRIG:TIM:LEV?");
+            let mut p = r.split(';');
+            (p.next().unwrap().parse().unwrap(), p.next().unwrap().parse().unwrap())
+        };
+        assert!(near(time, 1.2e-3) && near(level, 1.5), "{time} {level}");
+        line(&mut s, &mut ui, &cv, ":TRIG:TIM:SLOP RFAL;:TRIG:TIM:TIME 0.002");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:TIM:SLOP?"), "RFAL");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE RUNT");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:RUNT:POL?;:TRIG:RUNT:WHEN?"), "POS;NONE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:RUNT:WUPP?"), "9.9E37");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "none uses no width");
+        line(&mut s, &mut ui, &cv, ":TRIG:RUNT:WHEN LESS;:TRIG:RUNT:WUPP 0.02");
+        let width: f64 = line(&mut s, &mut ui, &cv, ":TRIG:RUNT:WUPP?").parse().unwrap();
+        assert!(near(width, 0.02), "{width}");
+        let levels = line(&mut s, &mut ui, &cv, ":TRIG:RUNT:ALEV?;:TRIG:RUNT:BLEV?");
+        let mut levels = levels.split(';');
+        let (hi, lo): (f64, f64) = (levels.next().unwrap().parse().unwrap(), levels.next().unwrap().parse().unwrap());
+        assert!(near(hi, 2.0) && near(lo, 0.5), "{hi} {lo}");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE WIND");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?;:TRIG:WINDOWS:SOUR?;:TRIG:WINDOW:POS?;:TRIG:WIND:SLOP?"), "WIND;CHAN2;ENT;RFAL");
+        line(&mut s, &mut ui, &cv, ":TRIG:WIND:SLOP NEG");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:WIND:TIME?"), "9.9E37");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "enter has no time");
+        line(&mut s, &mut ui, &cv, ":TRIG:WIND:POS TIME;:TRIG:WIND:TIME 0.002;:TRIG:WIND:WHEN GRE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:WIND:POS?;:TRIG:WIND:WHEN?"), "TIME;GRE");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE DEL");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:DEL:SA?;:TRIG:DEL:ASL?;:TRIG:DEL:SB?;:TRIG:DEL:TYPE?"), "CHAN1;POS;CHAN4;GRE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:DEL:TUPP?"), "9.9E37");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"));
+        let lower: f64 = line(&mut s, &mut ui, &cv, ":TRIG:DEL:TLOW?").parse().unwrap();
+        assert!(near(lower, 40e-6), "{lower}");
+        line(&mut s, &mut ui, &cv, ":TRIG:DEL:TYPE GOUT");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:DEL:TYPE?"), "GOUT");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE SET");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:SHOL:DSRC?;:TRIG:SET:CSRC?;:TRIG:SHOL:SLOP?;:TRIG:SHOL:TYPE?"), "CHAN3;CHAN4;POS;SETH");
+        line(&mut s, &mut ui, &cv, ":TRIG:SHOL:TYPE SET");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        assert!(line(&mut s, &mut ui, &cv, ":TRIG:SHOL:PATT?").starts_with("-113"));
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-113"));
+        line(&mut s, &mut ui, &cv, ":TRIG:SHOL:STIM 0.000005");
+        let setup: f64 = line(&mut s, &mut ui, &cv, ":TRIG:SHOL:STIM?").parse().unwrap();
+        let hold: f64 = line(&mut s, &mut ui, &cv, ":TRIG:SHOL:HTIM?").parse().unwrap();
+        assert!(near(setup, 5e-6) && near(hold, 2e-6), "{setup} {hold}");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE NEDG");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:NEDG:SOUR?;:TRIG:NEDG:SLOP?;:TRIG:NEDG:EDGE?"), "CHAN3;NEG;1");
+        let idle: f64 = line(&mut s, &mut ui, &cv, ":TRIG:NEDG:IDLE?").parse().unwrap();
+        assert!(near(idle, 50e-6), "{idle}");
+        line(&mut s, &mut ui, &cv, ":TRIG:NEDG:EDGE 0");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        line(&mut s, &mut ui, &cv, ":TRIG:NEDG:EDGE 20");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:NEDG:EDGE?"), "20");
+        line(&mut s, &mut ui, &cv, ":TRIG:MODE EDGE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?"), "EDGE");
+    }
+
+    #[test]
+    fn a_zone_is_a_box_or_a_shape_on_one_channel() {
+        let (mut s, mut ui, cv) = session();
+        line(&mut s, &mut ui, &cv, ":TRIG:ZONE1:STAT ON;:TRIG:ZONE1:SOUR CHAN2;:TRIG:ZONE1:MODE NOT;:TRIG:ZONE1:PLAC -1E-3,0,1E-3,1");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:ZONE1:STAT?;:TRIG:ZONE1:SOUR?;:TRIG:ZONE1:MODE?"), "1;CHAN2;NOT");
+        let place = line(&mut s, &mut ui, &cv, ":TRIG:ZONE1:PLAC?");
+        let nums: Vec<f64> = place.split(',').map(|s| s.parse().unwrap()).collect();
+        assert_eq!(nums.len(), 4);
+        assert!((nums[0] + 1e-3).abs() < 1e-9 && nums[1].abs() < 1e-9 && (nums[2] - 1e-3).abs() < 1e-9 && (nums[3] - 1.0).abs() < 1e-6, "{place}");
+        line(&mut s, &mut ui, &cv, ":TRIG:ZONE2:POIN -1E-3,0,0,1,1E-3,0");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:ZONE2:STAT?;:TRIG:ZONE2:MODE?"), "0;INT");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:ZONE2:PLAC?"), "9.9E37");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "a shape is not a box");
+        let shape = line(&mut s, &mut ui, &cv, ":TRIG:ZONE2:POIN?");
+        assert_eq!(shape.split(',').count(), 6, "{shape}");
+        line(&mut s, &mut ui, &cv, ":TRIG:ZONE2:CLE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:ZONE2:STAT?;:TRIG:ZONE2:POIN?"), "0;9.9E37");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"));
+        line(&mut s, &mut ui, &cv, ":TRIG:ZONE3:STAT ON");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        line(&mut s, &mut ui, &cv, ":TRIG:ZONE1:CLE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:ZONE1:STAT?"), "0");
+    }
+
+    #[test]
+    fn search_marks_the_trigger_events_and_can_go_to_one() {
+        let (mut s, mut ui, cv) = session();
+        line(&mut s, &mut ui, &cv, ":SEAR:STAT ON");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":SEAR:STAT?;:SEAR:COUN?;:SEAR:MODE?"), "1;0;EDGE");
+        line(&mut s, &mut ui, &cv, ":SEAR:MODE PULS");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"), "search uses the trigger");
+        ui.step(0.2);
+        let count: usize = line(&mut s, &mut ui, &cv, ":SEAR:COUN?").parse().unwrap();
+        assert!(count >= 1, "{count}");
+        let first: f64 = line(&mut s, &mut ui, &cv, ":SEAR:VAL? 1").parse().unwrap();
+        assert!(first.is_finite() && first.abs() < 1.0, "{first}");
+        line(&mut s, &mut ui, &cv, ":SEAR:EVEN 1");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "stop before going to an event");
+        line(&mut s, &mut ui, &cv, ":STOP");
+        line(&mut s, &mut ui, &cv, ":SEAR:EVEN 1");
+        assert!((ui.m.delay as f64 - first).abs() < 1e-6, "{} {}", ui.m.delay, first);
+        assert_eq!(line(&mut s, &mut ui, &cv, ":SEAR:EVEN?"), "1");
+        line(&mut s, &mut ui, &cv, ":SEAR:STAT OFF");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":SEAR:COUN?"), "0");
+    }
+
+    #[test]
+    fn history_frames_step_from_the_oldest_to_the_newest() {
+        let (mut s, mut ui, cv) = session();
+        for _ in 0..8 {
+            if ui.history_len() >= 2 {
+                break;
+            }
+            ui.step(0.05);
+        }
+        let n = ui.history_len();
+        assert!(n >= 2, "{n}");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":REC:WREP:FMAX?;:REC:CURR?"), format!("{n};{n}"));
+        line(&mut s, &mut ui, &cv, ":NAV:FRAM:BACK");
+        assert_eq!(ui.m.run, RunState::Stop);
+        assert_eq!(line(&mut s, &mut ui, &cv, ":REC:CURR?"), (n - 1).to_string());
+        line(&mut s, &mut ui, &cv, ":REC:CURR 1");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":REC:WREP:FCUR?"), "1");
+        line(&mut s, &mut ui, &cv, ":NAV:FRAM:NEXT");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":REC:CURR?"), "2");
+        line(&mut s, &mut ui, &cv, ":NAV:FRAM:STAR;:NAV:FRAM:END");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":REC:CURR?"), n.to_string());
+        line(&mut s, &mut ui, &cv, ":REC:CURR 0");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+    }
+
+    #[test]
+    fn logic_lane_height_uses_the_screen_sizes() {
+        let (mut s, mut ui, cv) = session();
+        assert_eq!(line(&mut s, &mut ui, &cv, ":LA:SIZE?"), "MED");
+        line(&mut s, &mut ui, &cv, ":LA:SIZE SMALl");
+        assert_eq!((ui.m.la.height, line(&mut s, &mut ui, &cv, ":LA:SIZE?")), (0, "SMAL".into()));
+        line(&mut s, &mut ui, &cv, ":LA:SIZE LARG");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":LA:SIZE?"), "LARG");
+        line(&mut s, &mut ui, &cv, ":LA:SIZE HUGE");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        assert_eq!(ui.m.la.height, 2);
+    }
+
+    #[test]
+    fn the_screen_waveform_saves_as_the_storage_menu_does() {
+        let (mut s, mut ui, cv) = session();
+        let dir = std::env::temp_dir();
+        let csv = dir.join("oos-screen-wave.csv");
+        let bin = dir.join("oos-screen-wave.bin");
+        let _ = std::fs::remove_file(&csv);
+        let _ = std::fs::remove_file(&bin);
+        line(&mut s, &mut ui, &cv, &format!(":SAVE:WAV \"{}\"", csv.display()));
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-230"), "no record yet");
+        ui.step(0.2);
+        line(&mut s, &mut ui, &cv, &format!(":SAVE:WAV \"{}\"", csv.display()));
+        let text = std::fs::read_to_string(&csv).unwrap();
+        assert!(text.starts_with("Time (s),CH1 (V)\n"), "{text}");
+        line(&mut s, &mut ui, &cv, &format!(":SAVE:WAV \"{}\"", bin.display()));
+        assert_eq!(&std::fs::read(&bin).unwrap()[..4], b"OOSW");
+        line(&mut s, &mut ui, &cv, ":SAVE:WAV \"/tmp/oos-screen-wave.txt\"");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:AMP:TYPE?;:MEAS:AMP:MAN:TOP?;:MEAS:AMP:MAN:BASE?"), "MAN;HIST;HIST");
+        line(&mut s, &mut ui, &cv, ":MEAS:AMP:TYPE AUTO");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        line(&mut s, &mut ui, &cv, ":MEAS:AMP:MAN:TOP MAXM");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:AMP:TYPE?;:MEAS:AMP:MAN:TOP?"), "MAN;HIST");
+    }
+
+    #[test]
+    fn a_reference_scale_changes_the_measurement_immediately() {
+        let (mut s, mut ui, cv) = reference_session();
+        let freq: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? FREQ,R1").parse().unwrap();
+        assert!((freq - 25e6).abs() / 25e6 < 0.02, "{freq}");
+        line(&mut s, &mut ui, &cv, ":REF:VSC 1,10");
+        let gone: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? FREQ,R1").parse().unwrap();
+        assert!(gone > 1e37, "10 V/div makes the square too small to time, {gone}");
+        line(&mut s, &mut ui, &cv, ":REF:VSC 1,0.5");
+        let back: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? FREQ,R1").parse().unwrap();
+        assert!((back - 25e6).abs() / 25e6 < 0.02, "{back}");
     }
 
     #[test]
@@ -1797,6 +6047,14 @@ mod tests {
         let data = line(&mut s, &mut ui, &cv, ":WAV:DATA?");
         assert!(data.starts_with("#9"), "{data}");
         assert!(data.contains("1.000000E-01"), "{data}");
+        line(&mut s, &mut ui, &cv, ":REF:EXP");
+        let dumped = std::fs::read_to_string(dir.join("ref2.csv")).unwrap();
+        assert!(dumped.starts_with("Time (s),Volts\n"), "{dumped}");
+        assert!(dumped.contains("0.1\n"), "{dumped}");
+        assert!(dumped.contains("1.000000000000e-9,0.4"), "{dumped}");
+        let named = dir.join("lane-out.csv");
+        line(&mut s, &mut ui, &cv, &format!(":REF:EXP \"{}\"", named.display()));
+        assert_eq!(std::fs::read_to_string(&named).unwrap(), dumped);
 
         let bin_src = {
             let mut m = crate::model::Model::default();
@@ -1845,7 +6103,568 @@ mod tests {
 
         line(&mut s, &mut ui, &cv, ":REF:CLE");
         assert_eq!(line(&mut s, &mut ui, &cv, ":WAV:POIN?"), "0");
+        line(&mut s, &mut ui, &cv, ":REF:EXP");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-230,"), "an empty slot has nothing to export");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn probewright_queries_answer_and_the_rigol_pages_round_trip() {
+        let (mut s, mut ui, cv) = session();
+        assert_eq!(line(&mut s, &mut ui, &cv, "*ESR?"), "128", "power-on bit until the first read");
+        assert_eq!(line(&mut s, &mut ui, &cv, "*ESR?"), "0");
+        let unknown = line(&mut s, &mut ui, &cv, ":REFerence:NOPE?");
+        assert!(unknown.starts_with("-113,"), "a missing query must answer, got {unknown:?}");
+        assert_eq!(line(&mut s, &mut ui, &cv, "*ESR?"), "32");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-113,"));
+        line(&mut s, &mut ui, &cv, "*CLS");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":SYST:ERR?"), "0,\"No error\"");
+
+        line(&mut s, &mut ui, &cv, ":CHAN1:DISP ON;:CHAN1:SCAL 0.5;:CHAN1:OFFS -0.25;:CHAN1:COUP AC;:CHAN1:BWL 20M");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CHAN1:DISP?;:CHAN1:COUP?;:CHAN1:BWL?"), "1;AC;20M");
+        let scale: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:SCAL?").parse().unwrap();
+        assert!((scale - 0.5).abs() < 1e-6, "{scale}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:PROB 10");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CHAN1:PROB?"), "1.000000E+01");
+        line(&mut s, &mut ui, &cv, ":TIM:MAIN:SCAL 1e-3;:TIM:MAIN:OFFS 2e-3;:TRIG:SWE NORM;:TRIG:EDGE:SOUR CHAN1;:TRIG:EDGE:LEV 0.1;:TRIG:EDGE:SLOP NEG");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:SWE?;:TRIG:EDGE:SOUR?;:TRIG:EDGE:SLOP?"), "NORM;CHAN1;NEG");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:ITEM? VPP,CHAN1"), "9.9E37");
+
+        let png = s.exec_line(&mut ui, &cv, ":DISP:DATA? PNG");
+        assert!(png.starts_with(b"#9"), "IEEE block");
+        assert_eq!(&png[11..15], b"\x89PNG");
+        let bmp = s.exec_line(&mut ui, &cv, ":DISP:DATA?");
+        assert_eq!(&bmp[11..13], b"BM");
+
+        line(&mut s, &mut ui, &cv, ":WAV:MODE MAX;:WAV:FORM WORD;:WAV:STAR 1;:WAV:STOP 1000");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":WAV:MODE?;:WAV:FORM?;:WAV:STAR?;:WAV:STOP?"), "MAX;WORD;1;1000");
+    }
+
+    #[test]
+    fn reference_commands_and_a_raw_word_page() {
+        let (mut s, mut ui, cv) = reference_session();
+        line(&mut s, &mut ui, &cv, ":REF:CURR 1;:REF:SOUR 1,CHAN2;:REF:VSC 1,0.2;:REF:VOFF 1,-0.05;:REF:LAB:CONT 1,lane");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":REF:CURR?;:REF:SOUR? 1;:REF:LAB:CONT? 1"), "1;CHAN2;lane");
+        let vsc: f64 = line(&mut s, &mut ui, &cv, ":REF:VSC? 1").parse().unwrap();
+        let voff: f64 = line(&mut s, &mut ui, &cv, ":REF:VOFF? 1").parse().unwrap();
+        assert!((vsc - 0.2).abs() < 1e-6 && (voff + 0.05).abs() < 1e-6, "{vsc} {voff}");
+        line(&mut s, &mut ui, &cv, ":REF:SHOW 1,OFF");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":REF:SHOW? 1"), "0");
+        line(&mut s, &mut ui, &cv, ":REF:SHOW 1,ON");
+
+        line(&mut s, &mut ui, &cv, ":WAV:SOUR R1;:WAV:MODE RAW;:WAV:FORM WORD;:WAV:STAR 10;:WAV:STOP 12");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":WAV:POIN?"), "3");
+        let data = s.exec_line(&mut ui, &cv, ":WAV:DATA?");
+        assert!(data.starts_with(b"#9"), "{:?}", &data[..data.len().min(16)]);
+        let n: usize = std::str::from_utf8(&data[2..11]).unwrap().parse().unwrap();
+        assert_eq!(n, 6, "three WORD points, high byte first");
+        assert_eq!(data.len(), 11 + 6);
+
+        line(&mut s, &mut ui, &cv, ":TRIG:EDGE:LEV 100;:SING");
+        ui.step(0.2);
+        assert_eq!(captures(&ui), 0.0);
+        line(&mut s, &mut ui, &cv, ":TFOR");
+        ui.step(0.2);
+        assert_eq!(captures(&ui), 1.0, "TFORce must release a waiting Single");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:STAT?"), "STOP");
+    }
+
+    #[test]
+    fn cursors_and_a_readout_round_trip() {
+        let (mut s, mut ui, cv) = reference_session();
+        line(&mut s, &mut ui, &cv, ":TIM:MAIN:SCAL 1e-6;:TIM:MAIN:OFFS 0;:CHAN1:SCAL 1;:CHAN1:OFFS 0");
+        line(&mut s, &mut ui, &cv, ":CURS:MODE MAN;:CURS:MAN:TYPE TIME;:CURS:MAN:SOUR CHAN1;:CURS:MAN:CAX 0;:CURS:MAN:CBX 1e-6");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CURS:MODE?;:CURS:MAN:TYPE?;:CURS:MAN:SOUR?"), "MAN;TIME;CHAN1");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CURS:MAN:CAX?"), "0.000000E+00");
+        let dx: f64 = line(&mut s, &mut ui, &cv, ":CURS:MAN:XDEL?").parse().unwrap();
+        let inv: f64 = line(&mut s, &mut ui, &cv, ":CURS:MAN:IXD?").parse().unwrap();
+        assert!((dx - 1e-6).abs() < 1e-9, "{dx}");
+        assert!((inv - 1e6).abs() < 1.0, "{inv}");
+
+        line(&mut s, &mut ui, &cv, ":CURS:MAN:TYPE AMPL;:CURS:MAN:CAY 0.5;:CURS:MAN:CBY -0.5");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CURS:MODE?;:CURS:MAN:TYPE?"), "MAN;AMPL");
+        let ay: f64 = line(&mut s, &mut ui, &cv, ":CURS:MAN:AYV?").parse().unwrap();
+        let dy: f64 = line(&mut s, &mut ui, &cv, ":CURS:MAN:YDEL?").parse().unwrap();
+        assert!((ay - 0.5).abs() < 1e-4, "{ay}");
+        assert!((dy + 1.0).abs() < 1e-3, "{dy}");
+
+        line(&mut s, &mut ui, &cv, ":CURS:MODE XY;:CURS:XY:AX 1e-6;:CURS:XY:AY 0.25");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CURS:MODE?"), "XY");
+        let ax: f64 = line(&mut s, &mut ui, &cv, ":CURS:XY:AX?").parse().unwrap();
+        let y: f64 = line(&mut s, &mut ui, &cv, ":CURS:XY:AY?").parse().unwrap();
+        assert!((ax - 1e-6).abs() < 1e-9 && (y - 0.25).abs() < 1e-4, "{ax} {y}");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CURS:MODE OFF;:CURS:MAN:XDEL?"), "9.9E37");
+
+        line(&mut s, &mut ui, &cv, ":MEAS:CLE;:MEAS:SOUR R1;:MEAS:ITEM VPP;:MEAS:ITEM RRDELAY,CHAN1,CHAN2");
+        let strip = line(&mut s, &mut ui, &cv, ":MEAS:STR?");
+        assert!(strip.contains("VPP,R1,"), "{strip}");
+        assert!(strip.contains("RRDELAY,CHAN1,CHAN2,"), "{strip}");
+        let vpp: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? VPP").parse().unwrap();
+        assert!((vpp - 1.0).abs() < 1e-3, "the saved square is 1 Vpp, got {vpp}");
+        line(&mut s, &mut ui, &cv, ":MEAS:CLE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:STR?"), "");
+
+        line(&mut s, &mut ui, &cv, ":DVM:ENAB ON;:DVM:SOUR CHAN2;:DVM:MODE ACRMS;:COUN:ENAB ON;:COUN:MODE PER;:COUN:NDIG 6");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":DVM:ENAB?;:DVM:SOUR?;:DVM:MODE?;:COUN:ENAB?;:COUN:MODE?;:COUN:NDIG?"), "1;CHAN2;ACRMS;1;PER;6");
+        assert!(!line(&mut s, &mut ui, &cv, ":DVM:CURR?;:COUN:CURR?").is_empty());
+        line(&mut s, &mut ui, &cv, ":COUN:TOT:CLE");
+    }
+
+    #[test]
+    fn manual_cursors_keep_time_and_voltage_together() {
+        let (mut s, mut ui, cv) = session();
+        line(&mut s, &mut ui, &cv, ":TIM:MAIN:SCAL 1e-6;:TIM:MAIN:OFFS 0;:CHAN1:SCAL 1;:CHAN1:OFFS 0");
+        line(&mut s, &mut ui, &cv, ":CURS:MODE MAN;:CURS:MAN:CAX 0;:CURS:MAN:CBX 1e-6;:CURS:MAN:CAY 0.5;:CURS:MAN:CBY -0.5");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CURS:MODE?"), "XY", "both axes are the screen's XY cursors");
+        let ax: f64 = line(&mut s, &mut ui, &cv, ":CURS:MAN:CAX?").parse().unwrap();
+        let bx: f64 = line(&mut s, &mut ui, &cv, ":CURS:MAN:CBX?").parse().unwrap();
+        let ay: f64 = line(&mut s, &mut ui, &cv, ":CURS:MAN:CAY?").parse().unwrap();
+        let by: f64 = line(&mut s, &mut ui, &cv, ":CURS:MAN:CBY?").parse().unwrap();
+        assert!((ax).abs() < 1e-9 && (bx - 1e-6).abs() < 1e-9, "times {ax} {bx}");
+        assert!((ay - 0.5).abs() < 1e-4 && (by + 0.5).abs() < 1e-4, "volts {ay} {by}");
+        line(&mut s, &mut ui, &cv, ":CURS:MODE OFF;:CURS:MAN:TYPE AMPL;:CURS:MAN:CAY 0.25;:CURS:MAN:CAX 0");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CURS:MODE?"), "XY");
+        let kept: f64 = line(&mut s, &mut ui, &cv, ":CURS:MAN:CAY?").parse().unwrap();
+        let moved: f64 = line(&mut s, &mut ui, &cv, ":CURS:MAN:CAX?").parse().unwrap();
+        assert!((kept - 0.25).abs() < 1e-4 && moved.abs() < 1e-9, "voltage survived the time cursor: {kept} {moved}");
+    }
+
+    #[test]
+    fn track_cursor_b_follows_its_own_channel() {
+        let (mut s, mut ui, cv) = session();
+        line(&mut s, &mut ui, &cv, "*CLS;:CURS:MODE TRAC;:CURS:TRAC:SOUR1 CHAN1;:CURS:TRAC:SOUR2 CHAN2;:CURS:TRAC:CAX 0;:CURS:TRAC:CBX 1e-6");
+        for _ in 0..4 {
+            ui.step(0.05);
+        }
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CURS:TRAC:SOUR1?;:CURS:TRAC:SOUR2?"), "CHAN1;CHAN2");
+        let ay = line(&mut s, &mut ui, &cv, ":CURS:TRAC:AYV?");
+        let by = line(&mut s, &mut ui, &cv, ":CURS:TRAC:BYV?");
+        assert!(ay.parse::<f64>().unwrap().is_finite() && by.parse::<f64>().unwrap().is_finite(), "{ay} {by}");
+        line(&mut s, &mut ui, &cv, "*CLS;:CURS:MODE MAN;:CURS:MAN:SOUR2 CHAN2");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"), "manual mode keeps one source");
+        line(&mut s, &mut ui, &cv, "*CLS;:CURS:MODE TRAC;:CURS:TRAC:MODE X");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CURS:TRAC:MODE?;:SYST:ERR?"), "X;0,\"No error\"");
+        line(&mut s, &mut ui, &cv, ":CURS:TRAC:MODE Y");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"), "track cursors follow time");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CURS:TRAC:MODE?"), "X");
+    }
+
+    #[test]
+    fn statistics_channel_labels_and_the_zoom_window_round_trip() {
+        let (mut s, mut ui, cv) = reference_session();
+        line(&mut s, &mut ui, &cv, ":CHAN1:LAB:CONT Vbus;:CHAN1:UNIT AMP;:CHAN1:VERN ON;:CHAN1:POS 0.2");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CHAN1:LAB:CONT?;:CHAN1:LAB:SHOW?;:CHAN1:UNIT?;:CHAN1:VERN?"), "Vbus;1;AMP;1");
+        let pos: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:OFFS?").parse().unwrap();
+        assert!((pos - 0.2).abs() < 1e-4, "{pos}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:LAB:SHOW OFF");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CHAN1:LAB:SHOW?;:CHAN1:LAB:CONT?"), "0;");
+
+        line(&mut s, &mut ui, &cv, ":TIM:MAIN:SCAL 1e-3;:TIM:HREF:MODE TRIG;:TIM:VERN ON;:TIM:DEL:ENAB ON;:TIM:DEL:SCAL 1e-4;:TIM:DEL:OFFS 0;:TIM:XY:ENAB ON");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TIM:HREF:MODE?;:TIM:VERN?;:TIM:DEL:ENAB?;:TIM:XY:ENAB?"), "TRIG;1;1;1");
+        let z: f64 = line(&mut s, &mut ui, &cv, ":TIM:DEL:SCAL?").parse().unwrap();
+        assert!((z - 1e-4).abs() < 1e-8, "{z}");
+
+        line(&mut s, &mut ui, &cv, ":MEAS:CLE;:MEAS:STAT:DISP ON;:MEAS:STAT:ITEM VPP,R1;:RUN");
+        ui.step(0.25);
+        ui.step(0.25);
+        let current: f64 = line(&mut s, &mut ui, &cv, ":MEAS:STAT:ITEM? CURR,VPP,R1").parse().unwrap();
+        let mean: f64 = line(&mut s, &mut ui, &cv, ":MEAS:STAT:ITEM? AVER,VPP,R1").parse().unwrap();
+        let n: f64 = line(&mut s, &mut ui, &cv, ":MEAS:STAT:ITEM? CNT,VPP,R1").parse().unwrap();
+        assert!((current - 1.0).abs() < 1e-3, "{current}");
+        assert!((mean - 1.0).abs() < 1e-3 && n >= 2.0, "mean {mean} count {n}");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:STAT:DISP?;:MEAS:STR?"), "1;VPP,R1,1.000000E+00");
+        line(&mut s, &mut ui, &cv, ":MEAS:STAT:RES");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:STAT:ITEM? CNT,VPP,R1"), "0.000000E+00");
+    }
+
+    #[test]
+    fn rigol_measurement_names_match_the_screen_items() {
+        let (mut s, mut ui, cv) = session();
+        line(&mut s, &mut ui, &cv, ":TIM:SCAL 1e-3");
+        for _ in 0..8 {
+            ui.step(0.05);
+        }
+        for (rigol, screen) in [("MAREA", "AREA"), ("MPAREA", "CAREA"), ("PVRMS", "CRMS"), ("PSLEWRATE", "PSLEW"), ("NSLEWRATE", "NSLEW")] {
+            let a: f64 = line(&mut s, &mut ui, &cv, &format!(":MEAS:ITEM? {rigol},CHAN1")).parse().unwrap();
+            let b: f64 = line(&mut s, &mut ui, &cv, &format!(":MEAS:ITEM? {screen},CHAN1")).parse().unwrap();
+            assert!((a - b).abs() < 1e-9 || (a > 1e37 && b > 1e37), "{rigol} {a} {screen} {b}");
+            assert!(a.is_finite() && a < 1e37, "{rigol} {a}");
+        }
+    }
+
+    #[test]
+    fn zero_a_channel_and_place_the_readout() {
+        let (mut s, mut ui, cv) = session();
+        for _ in 0..8 {
+            ui.step(0.05);
+        }
+        let before: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? VAVG,CHAN1").parse().unwrap();
+        assert!(before.is_finite() && before < 1e37, "{before}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:ZERO");
+        let bias: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:BIAS?").parse().unwrap();
+        assert!((bias - before).abs() < 0.05, "bias {bias} mean {before}");
+        for _ in 0..4 {
+            ui.step(0.05);
+        }
+        let after: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? VAVG,CHAN1").parse().unwrap();
+        assert!(after.abs() < 0.05, "the next record is corrected, {after}");
+
+        line(&mut s, &mut ui, &cv, "*CLS;:MEAS:STR:DOCK LEFT");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:STR:DOCK?"), "LEFT");
+        line(&mut s, &mut ui, &cv, ":MEAS:STR:DOCK ABOVE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:STR:DOCK?"), "ABOVE");
+        line(&mut s, &mut ui, &cv, ":MEAS:STR:DOCK MIDDLE");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224,"));
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:STR:DOCK?"), "ABOVE");
+
+        line(&mut s, &mut ui, &cv, ":MEAS:COUN:ENAB ON;:MEAS:COUN:SOUR CHAN2");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":COUN:ENAB?;:COUN:SOUR?"), "1;CHAN2");
+        let value: f64 = line(&mut s, &mut ui, &cv, ":MEAS:COUN:VAL?").parse().unwrap();
+        assert!(value.is_finite(), "{value}");
+    }
+
+    #[test]
+    fn measurement_gate_changes_burst_outside_and_duration() {
+        let (mut s, mut ui, cv) = session();
+        line(&mut s, &mut ui, &cv, ":TIM:SCAL 1e-3");
+        for _ in 0..8 {
+            ui.step(0.05);
+        }
+        line(&mut s, &mut ui, &cv, "*CLS;:MEAS:BURS:IDLE 0;:MEAS:OUTS BOTH;:MEAS:NPER 1;:MEAS:EDG CLOC");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:OUTS?;:MEAS:NPER?;:MEAS:EDG?"), "BOTH;1;CLOC");
+        let idle: f64 = line(&mut s, &mut ui, &cv, ":MEAS:BURS:IDLE?").parse().unwrap();
+        assert!(idle.abs() < 1e-15, "{idle}");
+        let one: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? NPER,CHAN1").parse().unwrap();
+        line(&mut s, &mut ui, &cv, ":MEAS:NPER 2");
+        let two: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? NPER,CHAN1").parse().unwrap();
+        assert!(one.is_finite() && one < 1e37 && (two / one - 2.0).abs() < 0.15, "one {one} two {two}");
+        line(&mut s, &mut ui, &cv, ":MEAS:NPER 1;:MEAS:EDG DATA");
+        let data: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? NPER,CHAN1").parse().unwrap();
+        assert!((data / one - 0.5).abs() < 0.15, "clock {one} data {data}");
+        let burst: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? BWID,CHAN1").parse().unwrap();
+        assert!(burst.is_finite() && burst < 1e37, "{burst}");
+        line(&mut s, &mut ui, &cv, ":MEAS:BURS:IDLE 1e-6");
+        let split: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? BWID,CHAN1").parse().unwrap();
+        assert!(split > 1e37, "a gap shorter than the half period splits the burst, {split}");
+        let mut csv = String::from("Time (s),Volts\n");
+        for index in 0..2000 {
+            let value = if index % 100 < 10 { 1.0 } else { 0.0 };
+            csv.push_str(&format!("{},{}\n", index as f64 * 1e-6, value));
+        }
+        ui.load_waveform_bytes(csv.as_bytes(), "pulse.csv").unwrap();
+        line(&mut s, &mut ui, &cv, ":MEAS:OUTS ABOV");
+        let above: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? TOUT,R1").parse().unwrap();
+        line(&mut s, &mut ui, &cv, ":MEAS:OUTS BEL");
+        let below: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? TOUT,R1").parse().unwrap();
+        assert!(above > 0.0 && below > above * 5.0, "a 10 % pulse is high briefly, above {above} below {below}");
+        line(&mut s, &mut ui, &cv, ":MEAS:NPER 0;:MEAS:BURS:IDLE -1;:MEAS:EDG BOTH");
+        let err = line(&mut s, &mut ui, &cv, ":SYST:ERR?");
+        assert!(err.starts_with("-224,"), "{err}");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:NPER?;:MEAS:EDG?"), "1;DATA");
+    }
+
+    #[test]
+    fn channel_zero_bias_shifts_the_reading() {
+        let (mut s, mut ui, cv) = session();
+        for _ in 0..8 {
+            ui.step(0.05);
+        }
+        let before: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? VAVG,CHAN1").parse().unwrap();
+        assert!(before.is_finite() && before < 1e37, "{before}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:BIAS 0.25");
+        for _ in 0..4 {
+            ui.step(0.05);
+        }
+        let after: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? VAVG,CHAN1").parse().unwrap();
+        assert!((before - after - 0.25).abs() < 0.05, "before {before} after {after}");
+    }
+
+    #[test]
+    fn acquisition_deskew_reference_color_and_thresholds_round_trip() {
+        let (mut s, mut ui, cv) = reference_session();
+        line(&mut s, &mut ui, &cv, ":ACQ:TYPE AVER;:ACQ:AVER 100;:ACQ:ULTR:MAXF 100");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":ACQ:TYPE?;:ACQ:AVER?;:ACQ:ULTR:MAXF?"), "AVER;64;100");
+        line(&mut s, &mut ui, &cv, ":ACQ:TYPE HRES;:ACQ:ULTR:MAXF 0");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":ACQ:TYPE?;:ACQ:ULTR:MAXF?"), "HRES;0");
+
+        line(&mut s, &mut ui, &cv, ":CHAN1:BIAS 0.25");
+        let bias: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:BIAS?").parse().unwrap();
+        assert!((bias - 0.25).abs() < 1e-6, "{bias}");
+        line(&mut s, &mut ui, &cv, "*CLS;:CHAN1:BIAS nan");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224,"), "a non-finite zero bias is refused");
+        let held_bias: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:BIAS?").parse().unwrap();
+        assert!((held_bias - 0.25).abs() < 1e-6, "{held_bias}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:BIAS 0");
+
+        line(&mut s, &mut ui, &cv, "*CLS;:CHAN1:OFFS 0.5;:CHAN1:SCAL 1;:CHAN1:EXP GND");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CHAN1:EXP?;:CHAN2:EXP?"), "GND;GND");
+        line(&mut s, &mut ui, &cv, ":CHAN1:SCAL 2");
+        let grown: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:OFFS?").parse().unwrap();
+        assert!((grown - 1.0).abs() < 1e-4, "ground expand keeps the zero in place, offset {grown}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:EXP CENT;:CHAN1:SCAL 1");
+        let held: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:OFFS?").parse().unwrap();
+        assert!((held - 1.0).abs() < 1e-4, "center expand leaves the offset, {held}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:EXP FOO");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224,"));
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CHAN1:EXP?"), "CENT");
+
+        line(&mut s, &mut ui, &cv, ":CHAN1:TCAL 2e-8");
+        let skew: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:TCAL?").parse().unwrap();
+        assert!((skew - 2e-8).abs() < 1e-12, "{skew}");
+        line(&mut s, &mut ui, &cv, ":TIM:SCAL 2e-5;:CHAN1:TCAL 1e-9");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224,"), "a slow time base refuses a deskew change");
+        let held: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:TCAL?").parse().unwrap();
+        assert!((held - 2e-8).abs() < 1e-12, "{held}");
+
+        line(&mut s, &mut ui, &cv, ":REF:VSC 1,0.5;:REF:VOFF 1,0.1;:REF:RES 1;:REF:COL 1,RED");
+        let vsc: f64 = line(&mut s, &mut ui, &cv, ":REF:VSC? 1").parse().unwrap();
+        let voff: f64 = line(&mut s, &mut ui, &cv, ":REF:VOFF? 1").parse().unwrap();
+        assert!((vsc - 1.0).abs() < 1e-6 && voff.abs() < 1e-9, "reset scale {vsc} offset {voff}");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":REF:COL? 1"), "RED");
+
+        line(&mut s, &mut ui, &cv, "*CLS;:MEAS:SET:PSA CHAN2;:MEAS:SET:PSB R1");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:SET:DSA?;:MEAS:SET:DSB?;:MEAS:SOUR?"), "CHAN2;R1;CHAN2");
+        line(&mut s, &mut ui, &cv, ":MEAS:SET:PSA MATH1");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224,"), "a measurement source is a channel or a reference");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:SOUR?"), "CHAN2");
+
+        line(&mut s, &mut ui, &cv, ":MEAS:SET:MIN 20;:MEAS:SET:MAX 80");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:SET:MIN?;:MEAS:SET:MAX?"), "20;80");
+        line(&mut s, &mut ui, &cv, ":MEAS:SET:MAX 10");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224,"), "the upper threshold must stay above the lower");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:SET:MAX?"), "80");
+        line(&mut s, &mut ui, &cv, "*CLS;:MEAS:SET:MID 50");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:SET:MID?;:SYST:ERR?"), "50;0,\"No error\"");
+        line(&mut s, &mut ui, &cv, ":MEAS:SET:MID 89");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224,"), "the middle stays at half the amplitude");
+        line(&mut s, &mut ui, &cv, ":MEAS:THR:DEF");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:SET:MIN?;:MEAS:SET:MAX?;:MEAS:THR:TYPE?;:MEAS:AREA?"), "10;90;PERC;MAIN");
+        line(&mut s, &mut ui, &cv, "*CLS;:CHAN1:VERN ON;:CHAN1:SCAL 0.12");
+        let fine: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:SCAL?").parse().unwrap();
+        assert!((fine - 0.12).abs() < 1e-4, "fine vertical scale {fine}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:VERN OFF");
+        let coarse: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:SCAL?").parse().unwrap();
+        assert!((coarse - 0.1).abs() < 1e-4, "vernier off returns to the coarse step, {coarse}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:SCAL 0.01;:CHAN1:OFFS 5");
+        let hi: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:OFFS?").parse().unwrap();
+        assert!((hi - 2.0).abs() < 1e-4, "offset clamps to what 10 mV/div can reach, {hi}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:OFFS -9");
+        let lo: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:OFFS?").parse().unwrap();
+        assert!((lo + 2.0).abs() < 1e-4, "a negative offset clamps the same way, {lo}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:OFFS 1");
+        let kept: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:OFFS?").parse().unwrap();
+        assert!((kept - 1.0).abs() < 1e-4, "an offset inside the range stays, {kept}");
+        line(&mut s, &mut ui, &cv, ":TIM:VERN ON;:TIM:SCAL 1.5e-3");
+        let fine_t: f64 = line(&mut s, &mut ui, &cv, ":TIM:SCAL?").parse().unwrap();
+        assert!((fine_t - 1.5e-3).abs() < 1e-6, "fine time base {fine_t}");
+        line(&mut s, &mut ui, &cv, ":TIM:VERN OFF");
+        let coarse_t: f64 = line(&mut s, &mut ui, &cv, ":TIM:SCAL?").parse().unwrap();
+        assert!((coarse_t - 2e-3).abs() < 1e-6, "vernier off returns to the coarse time base, {coarse_t}");
+        line(&mut s, &mut ui, &cv, ":TIM:SCAL 1e-3;:TIM:OFFS 1e-3;:TIM:HREF:MODE TRIG;:TIM:SCAL 2e-3");
+        let trig: f64 = line(&mut s, &mut ui, &cv, ":TIM:OFFS?").parse().unwrap();
+        assert!((trig - 2e-3).abs() < 1e-6, "trigger expand scales the delay, {trig}");
+        line(&mut s, &mut ui, &cv, ":TIM:HREF:MODE CENT;:TIM:SCAL 1e-3;:TIM:HREF:MODE LB;:TIM:OFFS 0;:TIM:SCAL 2e-3");
+        let left: f64 = line(&mut s, &mut ui, &cv, ":TIM:OFFS?").parse().unwrap();
+        assert!((left - 5e-3).abs() < 1e-6, "left expand keeps the left edge, {left}");
+        line(&mut s, &mut ui, &cv, ":TIM:HREF:MODE CENT;:TIM:SCAL 1e-3;:TIM:HREF:MODE RB;:TIM:OFFS 0;:TIM:SCAL 2e-3");
+        let right: f64 = line(&mut s, &mut ui, &cv, ":TIM:OFFS?").parse().unwrap();
+        assert!((right + 5e-3).abs() < 1e-6, "right expand keeps the right edge, {right}");
+        line(&mut s, &mut ui, &cv, ":TIM:HREF:MODE CENT;:TIM:SCAL 1e-3;:TIM:OFFS 4e-3;:TIM:SCAL 2e-3");
+        let mid: f64 = line(&mut s, &mut ui, &cv, ":TIM:OFFS?").parse().unwrap();
+        assert!((mid - 4e-3).abs() < 1e-6, "center expand leaves the delay, {mid}");
+        line(&mut s, &mut ui, &cv, ":TIM:DEL:ENAB ON;:TIM:DEL:SCAL 1e-4;:TIM:SCAL 1e-6");
+        let zoom: f64 = line(&mut s, &mut ui, &cv, ":TIM:DEL:SCAL?").parse().unwrap();
+        assert!((zoom - 1e-6).abs() < 1e-9, "the zoom window stays at least as fast as the main scale, {zoom}");
+
+        line(&mut s, &mut ui, &cv, "*CLS;:MEAS:THR:TYPE ABS;:MEAS:AREA ZOOM");
+        let refused = line(&mut s, &mut ui, &cv, ":SYST:ERR?");
+        assert!(refused.starts_with("-224,"), "{refused}");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:THR:TYPE?;:MEAS:AREA?"), "PERC;MAIN");
+    }
+
+    #[test]
+    fn a_mask_counts_passes_and_failures() {
+        let (mut s, mut ui, cv) = session();
+        for _ in 0..20 {
+            ui.step(0.05);
+        }
+        line(&mut s, &mut ui, &cv, "*CLS;:MASK:SOUR CHAN1;:MASK:X 0.5;:MASK:Y 0.5;:MASK:ENAB ON;:MASK:CRE;:MASK:OPER RUN");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":SYST:ERR?"), "0,\"No error\"", "the demo record must be there to build a mask");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MASK:ENAB?;:MASK:SOUR?;:MASK:OPER?"), "1;CHAN1;RUN");
+        let x: f64 = line(&mut s, &mut ui, &cv, ":MASK:X?").parse().unwrap();
+        let y: f64 = line(&mut s, &mut ui, &cv, ":MASK:Y?").parse().unwrap();
+        assert!((x - 0.5).abs() < 1e-6 && (y - 0.5).abs() < 1e-6, "{x} {y}");
+        for _ in 0..10 {
+            ui.step(0.05);
+        }
+        let passed: u64 = line(&mut s, &mut ui, &cv, ":MASK:PASS?").parse().unwrap();
+        let failed: u64 = line(&mut s, &mut ui, &cv, ":MASK:FAIL?").parse().unwrap();
+        let total: u64 = line(&mut s, &mut ui, &cv, ":MASK:TOT?").parse().unwrap();
+        assert_eq!(total, passed + failed);
+        assert!(total > 0, "a running mask must count frames, pass {passed} fail {failed}");
+        line(&mut s, &mut ui, &cv, ":MASK:RES");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MASK:PASS?;:MASK:FAIL?;:MASK:TOT?"), "0;0;0");
+        line(&mut s, &mut ui, &cv, ":MASK:OPER STOP");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MASK:OPER?"), "STOP");
+    }
+
+    #[test]
+    fn histogram_type_source_and_result() {
+        let (mut s, mut ui, cv) = session();
+        for _ in 0..8 {
+            ui.step(0.05);
+        }
+        line(&mut s, &mut ui, &cv, "*CLS;:HIST:ENAB ON;:HIST:TYPE VERT;:HIST:SOUR CHAN1");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":HIST:ENAB?;:HIST:TYPE?;:HIST:SOUR?"), "1;VERT;CHAN1");
+        line(&mut s, &mut ui, &cv, ":HIST:TYPE HOR");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":HIST:TYPE?"), "HOR");
+        let result = line(&mut s, &mut ui, &cv, ":HIST:STAT:RES?");
+        let sum: u64 = result.split([',', ':']).nth(1).unwrap_or("0").parse().unwrap_or(0);
+        assert!(sum > 0 && result.contains("Mean:") && result.contains("Sigma:"), "{result}");
+        line(&mut s, &mut ui, &cv, ":HIST:ENAB OFF");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":HIST:ENAB?"), "0");
+        let off = line(&mut s, &mut ui, &cv, ":HIST:STAT:RES?");
+        assert!(off.starts_with("Sum:0,"), "{off}");
+    }
+
+    #[test]
+    fn a_math_trace_sets_operator_scale_fft_and_filter() {
+        let (mut s, mut ui, cv) = session();
+        line(&mut s, &mut ui, &cv, "*CLS;:MATH1:DISP ON;:MATH1:OPER ADD;:MATH1:SOUR1 CHAN1;:MATH1:SOUR2 CHAN2;:MATH1:SCAL 0.2;:MATH1:OFFS 1");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MATH1:DISP?;:MATH1:OPER?;:MATH1:SOUR1?;:MATH1:SOUR2?"), "1;ADD;CHAN1;CHAN2");
+        let scale: f64 = line(&mut s, &mut ui, &cv, ":MATH1:SCAL?").parse().unwrap();
+        let offset: f64 = line(&mut s, &mut ui, &cv, ":MATH1:OFFS?").parse().unwrap();
+        assert!((scale - 0.2).abs() < 1e-9 && (offset - 1.0).abs() < 1e-6, "{scale} {offset}");
+        line(&mut s, &mut ui, &cv, ":MATH2:OPER INTG;:MATH2:SOUR1 MATH1");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MATH2:OPER?;:MATH2:SOUR1?"), "INTG;MATH1");
+        line(&mut s, &mut ui, &cv, ":MATH1:SOUR1 MATH1");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"), "a trace cannot use itself");
+        line(&mut s, &mut ui, &cv, ":MATH1:FFT:SOUR CHAN1;:MATH1:FFT:WIND BLAC;:MATH1:FFT:SCAL 10");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MATH1:OPER?;:MATH1:FFT:SOUR?;:MATH1:FFT:WIND?"), "FFT;CHAN1;BLAC");
+        let db: f64 = line(&mut s, &mut ui, &cv, ":MATH1:FFT:SCAL?").parse().unwrap();
+        assert!((db - 10.0).abs() < 1e-9, "{db}");
+        line(&mut s, &mut ui, &cv, ":MATH1:FILT:TYPE BPAS;:MATH1:FILT:W1 1000;:MATH1:FILT:W2 3000");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MATH1:FILT:TYPE?;:MATH1:OPER?"), "BPAS;BPAS");
+        let w1: f64 = line(&mut s, &mut ui, &cv, ":MATH1:FILT:W1?").parse().unwrap();
+        let w2: f64 = line(&mut s, &mut ui, &cv, ":MATH1:FILT:W2?").parse().unwrap();
+        assert!((w1 - 1000.0).abs() < 1e-3 && (w2 - 3000.0).abs() < 1e-3, "{w1} {w2}");
+        line(&mut s, &mut ui, &cv, ":MATH1:EXPR \"2*CH1-CH2\"");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MATH1:EXPR?;:MATH1:OPER?"), "2*CH1-CH2;EXPR");
+        line(&mut s, &mut ui, &cv, ":MATH1:DISP OFF");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MATH1:DISP?;:MATH1:OPER?"), "0;OFF");
+    }
+
+    #[test]
+    fn math_reset_autoscales_the_shown_trace() {
+        let (mut s, mut ui, cv) = session();
+        line(&mut s, &mut ui, &cv, ":MATH1:RES");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"));
+        assert!(line(&mut s, &mut ui, &cv, ":MATH1:RES?").starts_with("-113"));
+        ui.step(0.2);
+        line(&mut s, &mut ui, &cv, ":MATH1:OPER ABS;:MATH1:SOUR1 CHAN1;:MATH1:SCAL 50;:MATH1:OFFS 10");
+        line(&mut s, &mut ui, &cv, ":MATH1:RES");
+        let scale: f64 = line(&mut s, &mut ui, &cv, ":MATH1:SCAL?").parse().unwrap();
+        let offset: f64 = line(&mut s, &mut ui, &cv, ":MATH1:OFFS?").parse().unwrap();
+        assert!(scale < 50.0 && offset.abs() < 5.0, "{scale} {offset}");
+        line(&mut s, &mut ui, &cv, ":MATH2:FFT:SOUR CHAN1;:MATH2:FFT:SCAL 1;:MATH2:OFFS 4");
+        line(&mut s, &mut ui, &cv, ":MATH2:RES");
+        let db: f64 = line(&mut s, &mut ui, &cv, ":MATH2:SCAL?").parse().unwrap();
+        let off: f64 = line(&mut s, &mut ui, &cv, ":MATH2:OFFS?").parse().unwrap();
+        let kept: f64 = line(&mut s, &mut ui, &cv, ":MATH1:SCAL?").parse().unwrap();
+        assert!((db - 10.0).abs() < 1e-6 && off.abs() < 1e-6 && (kept - scale).abs() < 1e-9, "{db} {off} {kept}");
+    }
+
+    #[test]
+    fn a_setup_saves_and_recalls_the_storage_slot() {
+        let dir = std::env::temp_dir().join(format!("oos-scpi-setup-{}", std::process::id()));
+        let (mut s, mut ui, cv) = session();
+        ui.store_dir = dir.clone();
+        let scale = line(&mut s, &mut ui, &cv, ":TIM:SCAL?");
+        line(&mut s, &mut ui, &cv, ":CHAN2:DISP ON;:SAVE:SET");
+        let text = std::fs::read_to_string(dir.join("setup1.txt")).unwrap();
+        assert!(text.contains("ch2.on = true"), "{text}");
+        line(&mut s, &mut ui, &cv, ":CHAN2:DISP OFF;:TIM:SCAL 5e-3");
+        ui.m.run = RunState::Stop;
+        line(&mut s, &mut ui, &cv, ":LOAD:SET");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CHAN2:DISP?;:TIM:SCAL?"), format!("1;{scale}"));
+        assert_eq!(ui.m.run, RunState::Stop);
+        line(&mut s, &mut ui, &cv, ":SAVE:SET 2");
+        assert!(dir.join("setup2.txt").is_file());
+        line(&mut s, &mut ui, &cv, ":LOAD:SET 8");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-256"));
+        line(&mut s, &mut ui, &cv, ":SAVE:SET note.stp");
+        assert!(std::fs::read_to_string(dir.join("note.stp")).unwrap().starts_with("# OOS setup"));
+        line(&mut s, &mut ui, &cv, ":SAVE:SET note.csv");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        assert!(line(&mut s, &mut ui, &cv, ":SAVE:SET?").starts_with("-113"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_bus_sets_uart_spi_and_reads_the_event_block() {
+        let (mut s, mut ui, cv) = session();
+        line(&mut s, &mut ui, &cv, "*CLS;:BUS1:MODE RS232;:BUS1:DISP ON;:BUS1:FORM ASC;:BUS1:EVEN ON");
+        line(&mut s, &mut ui, &cv, ":BUS1:RS232:TX CHAN1;:BUS1:RS232:RX CHAN2;:BUS1:RS232:BAUD 9600;:BUS1:RS232:PAR EVEN;:BUS1:RS232:DBIT 8;:BUS1:THR 1.25");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":BUS1:MODE?;:BUS1:DISP?;:BUS1:FORM?;:BUS1:EVEN?"), "RS232;1;ASC;1");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":BUS1:RS232:TX?;:BUS1:RS232:RX?;:BUS1:RS232:BAUD?;:BUS1:RS232:PAR?;:BUS1:RS232:DBIT?"), "CHAN1;CHAN2;9600;EVEN;8");
+        let thr: f64 = line(&mut s, &mut ui, &cv, ":BUS1:THR?").parse().unwrap();
+        assert!((thr - 1.25).abs() < 1e-6, "{thr}");
+        line(&mut s, &mut ui, &cv, ":BUS2:MODE SPI;:BUS2:DISP ON;:BUS2:SPI:SCLK:SOUR CHAN2;:BUS2:SPI:MOSI:SOUR CHAN1;:BUS2:SPI:SS:SOUR CHAN3;:BUS2:SPI:DBIT 12");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":BUS2:MODE?;:BUS2:SPI:SCLK:SOUR?;:BUS2:SPI:MOSI:SOUR?;:BUS2:SPI:SS:SOUR?;:BUS2:SPI:DBIT?"), "SPI;CHAN2;CHAN1;CHAN3;12");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":BUS1:MODE?;:BUS1:RS232:BAUD?"), "RS232;9600", "the second bus must not replace the first");
+        line(&mut s, &mut ui, &cv, ":BUS2:SPI:SS:SOUR OFF");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":BUS2:SPI:SS:SOUR?"), "OFF");
+        let data = line(&mut s, &mut ui, &cv, ":BUS1:DATA?");
+        assert!(data.starts_with("#9") && data.contains("RS232"), "{data}");
+        line(&mut s, &mut ui, &cv, "*CLS;:BUS1:FORM DEC");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"), "only hex and ASCII are on this screen");
+    }
+
+    #[test]
+    fn a_live_force_trigger_asks_the_hardware_thread_to_pulse() {
+        let shared: crate::board::HwShared = Default::default();
+        let mut ui = Ui::new(Source::Hw { shared: shared.clone(), seen: 0 });
+        ui.m.run = RunState::Stop;
+        let mut s = Scpi::open(0);
+        let cv = Canvas::new(crate::ui::W, crate::ui::H);
+        line(&mut s, &mut ui, &cv, ":TFOR");
+        assert!(shared.lock().unwrap().force, "the acquisition thread pulses the FPGA force bit");
+        assert_eq!(ui.m.run, RunState::Run);
+    }
+
+    #[test]
+    fn display_type_persistence_brightness_and_grid() {
+        let (mut s, mut ui, cv) = session();
+        line(&mut s, &mut ui, &cv, "*CLS;:DISP:TYPE VECT;:DISP:GRAD:TIME 0.1;:DISP:WBR 50;:DISP:GRID HALF");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":DISP:TYPE?;:DISP:GRAD:TIME?;:DISP:WBR?;:DISP:GRID?"), "VECT;0.1;50;HALF");
+        line(&mut s, &mut ui, &cv, ":DISP:GRAD:TIME 0.2");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":DISP:GRAD:TIME?"), "0.1", "0.2 s snaps to the screen's 100 ms step");
+        line(&mut s, &mut ui, &cv, ":DISP:GRAD:TIME INF;:DISP:TYPE DOTS;:DISP:GRID NONE;:DISP:WBR 7");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":DISP:GRAD:TIME?;:DISP:TYPE?;:DISP:GRID?;:DISP:WBR?"), "INF;DOTS;NONE;10");
+
+        line(&mut s, &mut ui, &cv, "*CLS;:DISP:GBR 40;:DISP:RUL OFF;:DISP:COL ON");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":DISP:GBR?;:DISP:RUL?;:DISP:COL?"), "40;0;1");
+        line(&mut s, &mut ui, &cv, ":DISP:GBR 3");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":DISP:GBR?"), "10", "grid brightness stays at the screen floor");
+        line(&mut s, &mut ui, &cv, ":DISP:GBR 101");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224,"));
+        assert_eq!(line(&mut s, &mut ui, &cv, ":DISP:GBR?"), "10");
+
+        line(&mut s, &mut ui, &cv, "*CLS;:TIM:ROLL 0;:TIM:MODE XY;:TIM:XY:Z CHAN3");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TIM:ROLL?;:TIM:MODE?;:TIM:XY:ENAB?;:TIM:XY:X?;:TIM:XY:Y?;:TIM:XY:Z?"), "0;XY;1;CHAN1;CHAN2;CHAN3");
+        line(&mut s, &mut ui, &cv, ":TIM:MODE ROLL");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224,"), "roll is the auto-roll switch, not a timebase mode");
+        line(&mut s, &mut ui, &cv, ":TIM:XY:X CHAN2");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224,"), "the XY plot is CH1 against CH2");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TIM:MODE?;:TIM:XY:X?;:TIM:XY:Z?"), "XY;CHAN1;CHAN3");
+        line(&mut s, &mut ui, &cv, ":TIM:MODE MAIN;:TIM:XY:Z NONE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TIM:MODE?;:TIM:XY:ENAB?;:TIM:XY:Z?"), "MAIN;0;NONE");
+
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:IND?"), "0");
+        line(&mut s, &mut ui, &cv, ":MEAS:IND ON");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":CURS:MEAS:IND?"), "1");
+        line(&mut s, &mut ui, &cv, ":CURS:MEAS:IND OFF");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:IND?"), "0");
     }
 
     fn wfm_bytes() -> Vec<u8> {

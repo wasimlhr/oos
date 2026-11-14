@@ -7,6 +7,19 @@
 use super::*;
 use oos_dsp::measure::{burst_width, delay, duration_n, hold_time_at, phase, setup_hold_violations_at, setup_time_at, skew, time_outside, Analysis, Pair};
 
+/// Statistics of the on-screen histogram, in the source channel's units.
+pub(crate) struct HistStat {
+    pub sum: u64,
+    pub peaks: u64,
+    pub max: f64,
+    pub min: f64,
+    pub mean: f64,
+    pub median: f64,
+    pub mode: f64,
+    pub bin: f64,
+    pub sigma: f64,
+}
+
 /// Edge times are seconds from the first sample. Add the record's t0 so a pair of different records lines up.
 fn shift_edges(a: &Analysis, t0: f64) -> Analysis {
     if t0 == 0.0 {
@@ -344,7 +357,7 @@ impl Ui {
         }
     }
 
-    pub(super) fn counter_clear(&mut self) {
+    pub(crate) fn counter_clear(&mut self) {
         self.cnt_total = 0;
         self.cnt_stat = MStat::default();
     }
@@ -424,10 +437,10 @@ impl Ui {
         v
     }
 
-    /// The value of the active channel at time `t` of the last record.
-    pub(super) fn wave_at(&self, t: f64) -> Option<f32> {
+    /// The value of channel `c` at time `t` of the last record.
+    pub(crate) fn wave_at_ch(&self, c: usize, t: f64) -> Option<f32> {
         let r = self.last[0].as_ref()?;
-        let w = &r.ch[self.m.active];
+        let w = &r.ch[c.min(NCH - 1)];
         if w.is_empty() || r.dt <= 0.0 {
             return None;
         }
@@ -435,11 +448,277 @@ impl Ui {
         (i >= 0.0 && (i as usize) < w.len()).then(|| w[i as usize]).filter(|v| v.is_finite())
     }
 
+    /// The value of the active channel at time `t` of the last record.
+    pub(crate) fn wave_at(&self, t: f64) -> Option<f32> {
+        self.wave_at_ch(self.m.active, t)
+    }
+
     /// Times of the two cursors.
     pub(super) fn cursor_times(&self) -> (f64, f64) {
+        (self.cursor_time_at(self.m.cur_a), self.cursor_time_at(self.m.cur_b))
+    }
+
+    /// Time at a horizontal cursor fraction (0 is the left edge, 1 the right).
+    pub(crate) fn cursor_time_at(&self, frac: f32) -> f64 {
         let (tpd, delay) = self.view();
-        let t = |c: f32| ((c - 0.5) * HDIV * tpd + delay) as f64;
-        (t(self.m.cur_a), t(self.m.cur_b))
+        ((frac - 0.5) * HDIV * tpd + delay) as f64
+    }
+
+    /// Screen fraction for a time, kept on the graticule.
+    pub(crate) fn cursor_frac_time(&self, t: f64) -> f32 {
+        let (tpd, delay) = self.view();
+        let span = HDIV * tpd;
+        if span == 0.0 {
+            return 0.5;
+        }
+        ((t as f32 - delay) / span + 0.5).clamp(0.0, 1.0)
+    }
+
+    /// Volts at a vertical cursor fraction on the active channel (0 is the top, 1 the bottom).
+    pub(crate) fn cursor_volt_at(&self, frac: f32) -> f64 {
+        let ch = &self.m.ch[self.m.active.min(n_ch() - 1)];
+        ((0.5 - frac) * VDIV * ch.volts_per_div() - ch.offset) as f64
+    }
+
+    pub(crate) fn cursor_frac_volt(&self, v: f64) -> f32 {
+        let ch = &self.m.ch[self.m.active.min(n_ch() - 1)];
+        let span = VDIV * ch.volts_per_div();
+        if span == 0.0 {
+            return 0.5;
+        }
+        (0.5 - (v as f32 + ch.offset) / span).clamp(0.0, 1.0)
+    }
+
+    /// The source `:MEASure:ITEM` uses when the command names none, and the second source of a pair.
+    pub(crate) fn meas_source(&self) -> WaveId {
+        self.meas_src
+    }
+
+    pub(crate) fn meas_source_b(&self) -> WaveId {
+        self.meas_src_b
+    }
+
+    pub(crate) fn set_meas_source(&mut self, id: WaveId) {
+        self.meas_src = id;
+    }
+
+    pub(crate) fn set_meas_source_b(&mut self, id: WaveId) {
+        self.meas_src_b = id;
+    }
+
+    /// Put one measurement on the readout. Already there is a success. False when the list is full.
+    pub(crate) fn meas_add(&mut self, k: Meas, src: WaveId) -> bool {
+        let e = (k, src);
+        if self.m.meas.iter().any(|item| *item == e) {
+            return true;
+        }
+        if !self.meas_make_room() {
+            return false;
+        }
+        self.m.meas.push(e);
+        self.mstat.clear();
+        true
+    }
+
+    /// Put one pair measurement on the readout. False when the sources match or the list is full.
+    pub(crate) fn meas_add_pair(&mut self, k: usize, a: WaveId, b: WaveId) -> bool {
+        if a == b {
+            return false;
+        }
+        let e = (k, a, b);
+        if self.m.meas2.iter().any(|item| *item == e) {
+            return true;
+        }
+        if !self.meas_make_room() {
+            return false;
+        }
+        self.m.meas2.push(e);
+        self.mstat.clear();
+        true
+    }
+
+    /// `:MEASure:CLEar`: the strip, the pair rows, and the catalog rows.
+    pub(crate) fn meas_clear_remote(&mut self) {
+        self.m.meas.clear();
+        self.m.meas2.clear();
+        self.m.cat.clear();
+        self.meas_own.clear();
+        self.meas_cfg = None;
+        self.mstat.clear();
+    }
+
+    pub(crate) fn stats_shown(&self) -> bool {
+        self.stats_on
+    }
+
+    pub(crate) fn set_stats_shown(&mut self, on: bool) {
+        self.stats_on = on;
+    }
+
+    /// `:MEASure:STATistic:RESet`: the history, not the rows.
+    pub(crate) fn stats_reset(&mut self) {
+        self.mstat.clear();
+    }
+
+    /// Count, current value, min, max, mean, and standard deviation of one strip row.
+    /// A row that is not on the strip still has a current value; the history is empty.
+    pub(crate) fn meas_remote_stat(&self, k: Meas, src: WaveId) -> (u64, f64, f64, f64, f64, f64) {
+        let current = self.meas_at(src, k);
+        let idx = self.m.meas.iter().position(|&(kk, id)| kk == k && id == src);
+        self.stat_at(idx, current)
+    }
+
+    pub(crate) fn pair_remote_stat(&self, k: usize, a: WaveId, b: WaveId) -> (u64, f64, f64, f64, f64, f64) {
+        let current = self.pair_at(k, a, b);
+        let idx = self.m.meas2.iter().position(|&(kk, aa, bb)| kk == k && aa == a && bb == b).map(|i| self.m.meas.len() + i);
+        self.stat_at(idx, current)
+    }
+
+    fn stat_at(&self, idx: Option<usize>, current: f64) -> (u64, f64, f64, f64, f64, f64) {
+        let Some(st) = idx.and_then(|i| self.mstat.get(i)).filter(|st| st.n > 0) else {
+            return (0, current, f64::NAN, f64::NAN, f64::NAN, f64::NAN);
+        };
+        let mean = st.sum / st.n as f64;
+        let dev = if st.n > 1 { (st.sumsq / st.n as f64 - mean * mean).max(0.0).sqrt() } else { f64::NAN };
+        (st.n, current, st.min, st.max, mean, dev)
+    }
+
+    /// The trigger-type knob. Repeating the current type leaves its levels and times alone.
+    pub(crate) fn trig_type_set(&mut self, t: TrigType) {
+        if self.m.trig_type != t {
+            self.set_trig_type(t);
+        }
+    }
+
+    /// A protocol trigger, the same pair the Bus type uses: the decoder, then the type.
+    pub(crate) fn trig_bus_set(&mut self, p: Proto) {
+        if self.m.trig_type == TrigType::Bus && self.m.dec_proto == p {
+            return;
+        }
+        self.set_dec_proto(p);
+        self.set_trig_type(TrigType::Bus);
+    }
+
+    pub(crate) fn zoom_set_remote(&mut self, on: bool) {
+        self.set_zoom(on);
+    }
+
+    pub(crate) fn zoom_clamp(&mut self) {
+        self.clamp_zoom();
+    }
+
+    pub(crate) fn xy_on(&self) -> bool {
+        self.xy
+    }
+
+    pub(crate) fn xy_set(&mut self, on: bool) {
+        self.xy = on;
+    }
+
+    /// Builds the pass/fail mask from the source channel of the record on screen.
+    pub(crate) fn mask_create(&mut self) -> bool {
+        let c = self.m.mask_src;
+        let ready = self.last[0].as_ref().is_some_and(|r| c < r.ch.len() && !r.ch[c].is_empty());
+        if !ready {
+            return false;
+        }
+        self.create_mask();
+        true
+    }
+
+    pub(crate) fn mask_counts(&self) -> (u64, u64) {
+        (self.mask_pass, self.mask_fail)
+    }
+
+    pub(crate) fn mask_counts_reset(&mut self) {
+        self.mask_pass = 0;
+        self.mask_fail = 0;
+    }
+
+    /// The channel the histogram reads: the measurement source when that channel is on, otherwise the first channel on.
+    pub(crate) fn hist_source(&self) -> Option<usize> {
+        self.hist_src()
+    }
+
+    /// Histogram statistics in volts (vertical) or seconds (horizontal). None when the histogram is off.
+    pub(crate) fn hist_stat(&self) -> Option<HistStat> {
+        let (bins, mean_px, sd_px) = self.hist_bins()?;
+        let c = self.hist_src()?;
+        let n: u64 = bins.iter().sum();
+        let ch = &self.m.ch[c];
+        let vertical = self.m.hist == Hist::Vertical;
+        let (scale, mid, origin, high_is_low_index) = if vertical {
+            let h = bins.len().max(1) as f64;
+            let vpp = ch.volts_per_div() as f64 / (h / VDIV as f64);
+            (vpp, h / 2.0, -(ch.offset as f64), true)
+        } else {
+            let w = bins.len().max(1) as f64;
+            let (tdiv, delay) = self.view();
+            let spp = tdiv as f64 / (w / HDIV as f64);
+            (spp, w / 2.0, delay as f64, false)
+        };
+        let axis = |pix: f64| {
+            if high_is_low_index { (mid - pix) * scale + origin } else { (pix - mid) * scale + origin }
+        };
+        if n == 0 {
+            return Some(HistStat { sum: 0, peaks: 0, max: f64::NAN, min: f64::NAN, mean: f64::NAN, median: f64::NAN, mode: f64::NAN, bin: scale, sigma: f64::NAN });
+        }
+        let first = bins.iter().position(|&b| b > 0).unwrap() as f64;
+        let last = bins.iter().rposition(|&b| b > 0).unwrap() as f64;
+        let (min_px, max_px) = if high_is_low_index { (last, first) } else { (first, last) };
+        let mut peaks = 0u64;
+        for i in 0..bins.len() {
+            let b = bins[i];
+            if b == 0 {
+                continue;
+            }
+            let left = if i == 0 { 0 } else { bins[i - 1] };
+            let right = bins.get(i + 1).copied().unwrap_or(0);
+            if b > left && b >= right {
+                peaks += 1;
+            }
+        }
+        let mut acc = 0u64;
+        let mut med = 0usize;
+        for (i, &b) in bins.iter().enumerate() {
+            acc += b;
+            if acc * 2 >= n {
+                med = i;
+                break;
+            }
+        }
+        let mode_i = bins.iter().enumerate().max_by_key(|(_, b)| *b).map(|(i, _)| i).unwrap_or(0);
+        Some(HistStat {
+            sum: n,
+            peaks,
+            max: axis(max_px),
+            min: axis(min_px),
+            mean: axis(mean_px),
+            median: axis(med as f64),
+            mode: axis(mode_i as f64),
+            bin: scale,
+            sigma: sd_px * scale,
+        })
+    }
+
+    /// Horizontal tolerance is 0 to 2 div. Vertical is 0.04 to 4 div. A mask already on screen is rebuilt.
+    pub(crate) fn mask_tolerance(&mut self, x: Option<f32>, y: Option<f32>) -> bool {
+        if let Some(v) = x {
+            if !(0.0..=2.0).contains(&v) {
+                return false;
+            }
+            self.m.mask_x = v;
+        }
+        if let Some(v) = y {
+            if !(0.04..=4.0).contains(&v) {
+                return false;
+            }
+            self.m.mask_y = v;
+        }
+        if self.mask_ref.is_some() {
+            self.build_mask();
+        }
+        true
     }
 
     /// File of a mask in the slot of the Storage page, beside the setups.
@@ -494,6 +773,16 @@ impl Ui {
         self.toast(&format!("Mask loaded from {}", crate::store::file_name(&p)));
     }
 
+    /// Fold the mean of the last record into the channel's zero correction. False when that channel has no samples.
+    pub(crate) fn zero_channel(&mut self, c: usize) -> bool {
+        let ready = self.last[0].as_ref().is_some_and(|r| c < r.ch.len() && r.ch[c].iter().any(|x| x.is_finite()));
+        if !ready {
+            return false;
+        }
+        self.zero_input(c);
+        true
+    }
+
     /// The mean of the last record of channel `c` becomes part of its zero correction: for an input shorted or
     /// left open, at DC coupling.
     pub(super) fn zero_input(&mut self, c: usize) {
@@ -540,14 +829,70 @@ impl Ui {
 
     /// The reference of the Slot row as CSV: Time (s),Volts.
     pub(super) fn ref_export(&mut self) {
-        let Some(r) = &self.refs[self.ref_sel] else { return self.toast("That slot is empty") };
-        let mut t = String::from("Time (s),Volts\n");
-        for (k, v) in r.v.iter().enumerate() {
-            t.push_str(&format!("{:.12e},{}\n", r.t0 + k as f64 * r.dt, v));
+        match self.ref_export_named("") {
+            Ok(p) => self.toast_saved(&p, Ok(())),
+            Err(error) if error == "empty" => self.toast("That slot is empty"),
+            Err(error) => self.toast(&error),
         }
-        let p = self.ref_path();
-        let res = crate::store::write(&p, t.as_bytes());
-        self.toast_saved(&p, res);
+    }
+
+    /// Writes the selected slot as CSV. An empty path uses `refN.csv` beside the setups, which is the Export slot button.
+    /// A relative path is beside the setups. `empty` means the slot has no waveform.
+    pub(crate) fn ref_export_named(&self, path: &str) -> Result<std::path::PathBuf, String> {
+        let Some(r) = self.refs.get(self.ref_sel).and_then(|slot| slot.as_ref()) else {
+            return Err("empty".into());
+        };
+        let mut text = String::from("Time (s),Volts\n");
+        for (k, v) in r.v.iter().enumerate() {
+            text.push_str(&format!("{:.12e},{}\n", r.t0 + k as f64 * r.dt, v));
+        }
+        let raw = path.trim().trim_matches('"');
+        let p = if raw.is_empty() {
+            self.ref_path()
+        } else {
+            let named = std::path::Path::new(raw);
+            if named.is_absolute() {
+                named.to_path_buf()
+            } else {
+                self.setup_path().parent().map(|d| d.join(named)).unwrap_or_else(|| named.to_path_buf())
+            }
+        };
+        crate::store::write(&p, text.as_bytes()).map_err(|e| e.to_string())?;
+        Ok(p)
+    }
+
+    /// The on-screen record the Storage menu saves. `.csv` is Save waveform (CSV). `.bin` is Save waveform (binary).
+    /// An empty path uses the next `wave-NNN.csv` in the save folder, which is that CSV button.
+    /// A relative path is beside the setups. `empty` means there is no record. `suffix` means the name is not `.csv` or `.bin`.
+    pub(crate) fn save_waveform_named(&self, path: &str) -> Result<std::path::PathBuf, String> {
+        let Some(rec) = self.last[0].as_ref() else { return Err("empty".into()) };
+        if !(0..NCH).any(|c| self.m.ch[c].on && !rec.ch[c].is_empty()) {
+            return Err("empty".into());
+        }
+        let raw = path.trim().trim_matches('"');
+        let (p, bin) = if raw.is_empty() {
+            (crate::store::next_name(&self.save_dir(), "wave", "csv"), false)
+        } else {
+            let named = std::path::Path::new(raw);
+            let ext = named.extension().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase();
+            let bin = match ext.as_str() {
+                "csv" => false,
+                "bin" => true,
+                _ => return Err("suffix".into()),
+            };
+            let p = if named.is_absolute() {
+                named.to_path_buf()
+            } else {
+                self.setup_path().parent().map(|d| d.join(named)).unwrap_or_else(|| named.to_path_buf())
+            };
+            (p, bin)
+        };
+        if bin {
+            crate::store::write(&p, &crate::store::wave_bin(rec, &self.m)).map_err(|e| e.to_string())?;
+        } else {
+            crate::store::write(&p, crate::store::wave_csv(rec, &self.m).as_bytes()).map_err(|e| e.to_string())?;
+        }
+        Ok(p)
     }
 
     /// Opens a captured waveform into the selected R slot: CSV, OOS `.bin`, or `.wfm` (`:WFM#002` or `:WFM#003`).
@@ -600,6 +945,111 @@ impl Ui {
     pub(crate) fn ref_show_set(&mut self, on: bool) -> bool {
         let Some(r) = self.refs.get_mut(self.ref_sel).and_then(|r| r.as_mut()) else { return false };
         r.on = on;
+        true
+    }
+
+    /// Whether slot `slot` is drawn. None when it is empty or out of range.
+    pub(crate) fn ref_shown_slot(&self, slot: usize) -> Option<bool> {
+        self.refs.get(slot).and_then(|r| r.as_ref()).map(|r| r.on)
+    }
+
+    pub(crate) fn ref_show_slot(&mut self, slot: usize, on: bool) -> bool {
+        if slot >= NREF {
+            return false;
+        }
+        self.ref_sel = slot;
+        self.ref_show_set(on)
+    }
+
+    /// Channel a `:REFerence:SAVE` of this slot copies. A saved slot remembers its own source.
+    pub(crate) fn ref_source_of(&self, slot: usize) -> usize {
+        self.refs.get(slot).and_then(|r| r.as_ref()).map(|r| r.src).unwrap_or(if slot == self.ref_sel { self.ref_src } else { 0 })
+    }
+
+    pub(crate) fn ref_source_set(&mut self, slot: usize, ch: usize) -> bool {
+        if slot >= NREF || ch >= n_ch() {
+            return false;
+        }
+        self.ref_sel = slot;
+        self.ref_src = ch;
+        if let Some(r) = self.refs.get_mut(slot).and_then(|r| r.as_mut()) {
+            r.src = ch;
+        }
+        true
+    }
+
+    pub(crate) fn ref_vscale(&self, slot: usize) -> Option<f32> {
+        self.refs.get(slot).and_then(|r| r.as_ref()).map(|r| r.vpd)
+    }
+
+    pub(crate) fn ref_vscale_set(&mut self, slot: usize, vpd: f32) -> bool {
+        if slot >= NREF || !(vpd > 0.0) {
+            return false;
+        }
+        self.ref_sel = slot;
+        {
+            let Some(r) = self.refs.get_mut(slot).and_then(|r| r.as_mut()) else { return false };
+            r.vpd = vpd;
+        }
+        self.measure_refs();
+        true
+    }
+
+    pub(crate) fn ref_voffset(&self, slot: usize) -> Option<f32> {
+        self.refs.get(slot).and_then(|r| r.as_ref()).map(|r| r.offset)
+    }
+
+    pub(crate) fn ref_voffset_set(&mut self, slot: usize, offset: f32) -> bool {
+        if slot >= NREF || !offset.is_finite() {
+            return false;
+        }
+        self.ref_sel = slot;
+        let Some(r) = self.refs.get_mut(slot).and_then(|r| r.as_mut()) else { return false };
+        r.offset = offset;
+        true
+    }
+
+    pub(crate) fn ref_color(&self, slot: usize) -> Option<usize> {
+        self.refs.get(slot).and_then(|r| r.as_ref()).map(|r| r.color)
+    }
+
+    pub(crate) fn ref_color_set(&mut self, slot: usize, color: usize) -> bool {
+        if slot >= NREF {
+            return false;
+        }
+        self.ref_sel = slot;
+        let Some(r) = self.refs.get_mut(slot).and_then(|r| r.as_mut()) else { return false };
+        r.color = color;
+        true
+    }
+
+    /// `:REFerence:RESet`: offset back to zero, scale back to the source channel.
+    pub(crate) fn ref_reset_scale(&mut self, slot: usize) -> bool {
+        if slot >= NREF {
+            return false;
+        }
+        let Some(src) = self.refs.get(slot).and_then(|r| r.as_ref()).map(|r| r.src) else { return false };
+        let vpd = self.m.ch[src.min(n_ch() - 1)].volts_per_div();
+        {
+            let Some(r) = self.refs.get_mut(slot).and_then(|r| r.as_mut()) else { return false };
+            r.offset = 0.0;
+            r.vpd = vpd.max(1e-9);
+        }
+        self.measure_refs();
+        true
+    }
+
+    pub(crate) fn ref_label(&self, slot: usize) -> Option<String> {
+        self.refs.get(slot).and_then(|r| r.as_ref()).map(|r| r.label.clone())
+    }
+
+    pub(crate) fn ref_label_set(&mut self, slot: usize, label: String) -> bool {
+        if slot >= NREF {
+            return false;
+        }
+        self.ref_sel = slot;
+        let Some(r) = self.refs.get_mut(slot).and_then(|r| r.as_mut()) else { return false };
+        r.label = label;
         true
     }
 
