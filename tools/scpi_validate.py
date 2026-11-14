@@ -217,6 +217,12 @@ def validate(oos, result):
     result.equal("measurement range", oos.query(":MEASure:AREA?"), "MAIN")
     oos.write(":MEASure:AREA ZOOM")
     result.equal("zoom range refused", oos.query(":SYSTem:ERRor?").split(",")[0], "-224")
+    result.equal("amplitude method", oos.query(":MEASure:AMP:TYPE?"), "MAN")
+    result.equal("amplitude top and base", oos.query(":MEASure:AMP:MANual:TOP?;:MEASure:AMP:MANual:BASE?"), "HIST;HIST")
+    oos.write(":MEASure:AMP:TYPE AUTO")
+    result.equal("auto amplitude refused", oos.query(":SYSTem:ERRor?").split(",")[0], "-224")
+    oos.write(":MEASure:AMP:MANual:TOP MAXMin")
+    result.equal("max-min top refused", oos.query(":SYSTem:ERRor?").split(",")[0], "-224")
 
     result.numeric("source isolation R1", oos.measure("VPP", "R1"), 4.0, absolute=2e-5)
     result.numeric("source isolation REF2 alias", oos.measure("VPP", "REF2"), 2.0, absolute=2e-5)
@@ -315,6 +321,15 @@ def validate(oos, result):
     oos.write(":CHANnel1:COUPling AC")
     oos.write(":CHANnel1:BWLimit 20M")
     result.equal("channel display", oos.query(":CHANnel1:DISPlay?"), "1")
+    saved = Path(tempfile.gettempdir()) / "oos-screen-wave.csv"
+    oos.write(f':SAVE:WAVeform "{saved}"')
+    screen = saved.read_text()
+    result.add("screen waveform is the storage csv", screen.startswith("Time (s),CH1 (V)\n"))
+    binned = Path(tempfile.gettempdir()) / "oos-screen-wave.bin"
+    oos.write(f':SAVE:WAVeform "{binned}"')
+    result.equal("screen waveform binary", binned.read_bytes()[:4], b"OOSW")
+    oos.write(':SAVE:WAVeform "/tmp/oos-screen-wave.txt"')
+    result.equal("waveform suffix refused", oos.query(":SYSTem:ERRor?").split(",")[0], "-224")
     result.equal("channel coupling", oos.query(":CHANnel1:COUPling?"), "AC")
     result.equal("channel bandwidth", oos.query(":CHANnel1:BWLimit?"), "20M")
     result.numeric("channel scale", float(oos.query(":CHANnel1:SCALe?")), 0.5, relative=1e-6)

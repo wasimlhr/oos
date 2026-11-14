@@ -22,9 +22,11 @@
 //! :POWer:ITEM? <item>[,src...], :POWer:HARMonics? [src], :SPECtrum:ITEM? <item>[,src], :BODE:MODE LOOP|PSRR|IMPedance,
 //! :MAGnetic:ITEM? <item>[,V,I], :INVerter:ITEM? <item>[,src...], :DPT:ITEM? <item>[,V,I[,G]], :BANDwidth:ITEM? <item>[,src],
 //! :WAVeform:SOURce CHANn|Rn|MODE NORM/MAX/RAW|FORMat BYTE/WORD/ASC|STARt|STOP|POINts|DATA?|PREamble?,
+//! :SAVE:WAVeform <file.csv|file.bin> (the Storage menu's screen waveform; an empty path is the CSV button),
 //! :DISPlay:DATA? [BMP|PNG], :DISPlay:TYPE|GRADing:TIME|WBRightness|GBRightness|GRID|RULers|COLor,
 //! :REFerence:SLOT R1..R10, :CURRent, :SOURce, :VSCale, :VOFFset, :COLor, :RESet, :LABel:CONTent, :LOAD <file>, :IMPort [file], :EXPort [file], :SAVE, :SHOW ON|OFF, :CLEar,
 //! :MEASure:SETup:MAX|MIN|MID (the middle stays 50), :MEASure:THReshold:TYPE PERCent, :MEASure:THReshold:DEFault, :MEASure:SETup:PSA|PSB|DSA|DSB,
+//! :MEASure:AMP:TYPE MANual (histogram), :MEASure:AMP:MANual:TOP|BASE HISTogram,
 //! :SIM:PRESet <name>, :SIM:SLOT R1..R10, :SIM:PLAY ON|OFF, :SIM:SHOW ON|OFF,
 //! :SIM:SSC:MODE OFF|DOWN|CENTER, :SIM:SSC:DEViation <fraction>, :SIM:SSC:FREQuency <Hz>,
 //! :SIM:JITTer:DCD <seconds pp>|:CORRelated <seconds RMS>|:CORNer <Hz>, :SIM:PATTern PRBS7..31.
@@ -1322,6 +1324,9 @@ impl Scpi {
         if kw(n0, "TIMebase") {
             return self.timebase_more(ui, &nodes[1..], query, arg);
         }
+        if kw(n0, "MEASure") && nodes.len() >= 3 && kw(nodes[1], "AMP") {
+            return self.meas_amp(&nodes[2..], query, arg);
+        }
         if kw(n0, "MEASure") && nodes.len() == 3 && kw(nodes[1], "THReshold") {
             let which = nodes[2];
             if kw(which, "TYPE") {
@@ -1562,6 +1567,9 @@ impl Scpi {
             if kw(n1, "DATA") && query {
                 return Some(self.wave_data(ui));
             }
+        }
+        if kw(n0, "SAVE") {
+            return self.save_cmd(ui, &nodes[1..], query, arg);
         }
         if kw(n0, "REFerence") {
             return self.ref_cmd(ui, &nodes[1..], query, arg);
@@ -1871,6 +1879,56 @@ impl Scpi {
             return self.counter_cmd(ui, &nodes[1..], query, arg);
         }
         self.push_err(format!("-113,\"Undefined header\" {}", cmd));
+        None
+    }
+
+    /// Top and base come from the histogram. AUTO and MAXMin are not on this screen.
+    fn meas_amp(&mut self, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if n.len() == 1 && kw(n[0], "TYPE") {
+            if query {
+                return t("MAN");
+            }
+            if kw(arg, "MANual") {
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" amplitude uses the histogram".into());
+            return None;
+        }
+        if n.len() == 2 && kw(n[0], "MANual") && (kw(n[1], "TOP") || kw(n[1], "BASE")) {
+            if query {
+                return t("HIST");
+            }
+            if kw(arg, "HISTogram") {
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" top and base are histogram modes".into());
+            return None;
+        }
+        self.push_err(format!("-113,\"Undefined header\" :MEASure:AMP:{}", n.join(":")));
+        None
+    }
+
+    /// `:SAVE:WAVeform`: the on-screen record, CSV or binary, the same bytes as the Storage menu.
+    fn save_cmd(&mut self, ui: &Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        if !query && n.len() == 1 && kw(n[0], "WAVeform") {
+            return match ui.save_waveform_named(arg) {
+                Ok(_) => None,
+                Err(e) if e == "empty" => {
+                    self.push_err("-230,\"Data corrupt or stale\" no waveform".into());
+                    None
+                }
+                Err(e) if e == "suffix" => {
+                    self.push_err("-224,\"Illegal parameter value\" csv or bin".into());
+                    None
+                }
+                Err(e) => {
+                    self.push_err(format!("-224,\"Illegal parameter value\" {}", e));
+                    None
+                }
+            };
+        }
+        self.push_err(format!("-113,\"Undefined header\" :SAVE:{}", n.join(":")));
         None
     }
 
@@ -4138,6 +4196,32 @@ mod tests {
 
     fn captures(ui: &Ui) -> f64 {
         crate::json::parse(&ui.workflow_state()).unwrap().get("captures").unwrap().num().unwrap()
+    }
+
+    #[test]
+    fn the_screen_waveform_saves_as_the_storage_menu_does() {
+        let (mut s, mut ui, cv) = session();
+        let dir = std::env::temp_dir();
+        let csv = dir.join("oos-screen-wave.csv");
+        let bin = dir.join("oos-screen-wave.bin");
+        let _ = std::fs::remove_file(&csv);
+        let _ = std::fs::remove_file(&bin);
+        line(&mut s, &mut ui, &cv, &format!(":SAVE:WAV \"{}\"", csv.display()));
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-230"), "no record yet");
+        ui.step(0.2);
+        line(&mut s, &mut ui, &cv, &format!(":SAVE:WAV \"{}\"", csv.display()));
+        let text = std::fs::read_to_string(&csv).unwrap();
+        assert!(text.starts_with("Time (s),CH1 (V)\n"), "{text}");
+        line(&mut s, &mut ui, &cv, &format!(":SAVE:WAV \"{}\"", bin.display()));
+        assert_eq!(&std::fs::read(&bin).unwrap()[..4], b"OOSW");
+        line(&mut s, &mut ui, &cv, ":SAVE:WAV \"/tmp/oos-screen-wave.txt\"");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:AMP:TYPE?;:MEAS:AMP:MAN:TOP?;:MEAS:AMP:MAN:BASE?"), "MAN;HIST;HIST");
+        line(&mut s, &mut ui, &cv, ":MEAS:AMP:TYPE AUTO");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        line(&mut s, &mut ui, &cv, ":MEAS:AMP:MAN:TOP MAXM");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:AMP:TYPE?;:MEAS:AMP:MAN:TOP?"), "MAN;HIST");
     }
 
     #[test]

@@ -845,6 +845,40 @@ impl Ui {
         Ok(p)
     }
 
+    /// The on-screen record the Storage menu saves. `.csv` is Save waveform (CSV). `.bin` is Save waveform (binary).
+    /// An empty path uses the next `wave-NNN.csv` in the save folder, which is that CSV button.
+    /// A relative path is beside the setups. `empty` means there is no record. `suffix` means the name is not `.csv` or `.bin`.
+    pub(crate) fn save_waveform_named(&self, path: &str) -> Result<std::path::PathBuf, String> {
+        let Some(rec) = self.last[0].as_ref() else { return Err("empty".into()) };
+        if !(0..NCH).any(|c| self.m.ch[c].on && !rec.ch[c].is_empty()) {
+            return Err("empty".into());
+        }
+        let raw = path.trim().trim_matches('"');
+        let (p, bin) = if raw.is_empty() {
+            (crate::store::next_name(&self.save_dir(), "wave", "csv"), false)
+        } else {
+            let named = std::path::Path::new(raw);
+            let ext = named.extension().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase();
+            let bin = match ext.as_str() {
+                "csv" => false,
+                "bin" => true,
+                _ => return Err("suffix".into()),
+            };
+            let p = if named.is_absolute() {
+                named.to_path_buf()
+            } else {
+                self.setup_path().parent().map(|d| d.join(named)).unwrap_or_else(|| named.to_path_buf())
+            };
+            (p, bin)
+        };
+        if bin {
+            crate::store::write(&p, &crate::store::wave_bin(rec, &self.m)).map_err(|e| e.to_string())?;
+        } else {
+            crate::store::write(&p, crate::store::wave_csv(rec, &self.m).as_bytes()).map_err(|e| e.to_string())?;
+        }
+        Ok(p)
+    }
+
     /// Opens a captured waveform into the selected R slot: CSV, OOS `.bin`, or `.wfm` (`:WFM#002` or `:WFM#003`).
     pub(super) fn ref_import(&mut self) {
         let slot = self.ref_sel + 1;
