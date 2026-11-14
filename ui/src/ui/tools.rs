@@ -757,6 +757,16 @@ impl Ui {
         self.toast(&format!("Mask loaded from {}", crate::store::file_name(&p)));
     }
 
+    /// Fold the mean of the last record into the channel's zero correction. False when that channel has no samples.
+    pub(crate) fn zero_channel(&mut self, c: usize) -> bool {
+        let ready = self.last[0].as_ref().is_some_and(|r| c < r.ch.len() && r.ch[c].iter().any(|x| x.is_finite()));
+        if !ready {
+            return false;
+        }
+        self.zero_input(c);
+        true
+    }
+
     /// The mean of the last record of channel `c` becomes part of its zero correction: for an input shorted or
     /// left open, at DC coupling.
     pub(super) fn zero_input(&mut self, c: usize) {

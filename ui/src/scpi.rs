@@ -3,13 +3,14 @@
 
 //! SCPI server (TCP 5555, the port of the stock firmware), a stock-compatible subset:
 //! *IDN? *RST *OPC? *CLS *ESR?, :RUN :STOP :SINGle :TFORce :AUToscale :CLEar,
-//! :CHANnel<n>:DISPlay|SCALe|OFFSet|POSition|COUPling|BWLimit|PROBe|INVert|UNITs|VERNier|TCALibrate|BIAS|EXPand|LABel:SHOW|LABel:CONTent,
+//! :CHANnel<n>:DISPlay|SCALe|OFFSet|POSition|COUPling|BWLimit|PROBe|INVert|UNITs|VERNier|TCALibrate|BIAS|ZERO|EXPand|LABel:SHOW|LABel:CONTent,
 //! :TIMebase[:MAIN]:SCALe|OFFSet, :TIMebase:DELay:ENABle|SCALe|OFFSet, :TIMebase:VERNier, :TIMebase:HREFerence:MODE, :TIMebase:MODE, :TIMebase:ROLL,
 //! :TIMebase:XY:ENABle|X|Y|Z,
 //! :TRIGger:MODE? :TRIGger:EDGE:SOURce|LEVel|SLOPe, :TRIGger:SWEep, :TRIGger:HOLDoff, :TRIGger:STATus?,
 //! :ACQuire:SRATe?|MDEPth[?] (AUTO, 1k..125M)|TYPE NORM/PEAK/AVER/HRES|AVERages|ULTRa:MAXFrame,
 //! :MEASure:ITEM[?] <item>[,CHANn|Rn[,src]] (the set form adds a readout row), :MEASure:SOURce, :MEASure:CLEar, :MEASure:INDicator,
-//! :MEASure:STRip?, :MEASure:READout?, :EYE:ITEM? <figure>,
+//! :MEASure:STRip?, :MEASure:STRip:DOCK UNDer|LEFT|RIGHt|ABOVe, :MEASure:READout?, :EYE:ITEM? <figure>,
+//! :MEASure:COUNter:ENABle|SOURce|VALue? (the same counter as :COUNter),
 //! :MEASure:STATistic:DISPlay|RESet|ITEM, :MEASure:REFS 10/90|20/80, :MEASure:TSETup, :MEASure:THOLd,
 //! :MEASure:BURSt:IDLE, :MEASure:OUTSide ABOVe|BELow|BOTH, :MEASure:NPERiods, :MEASure:EDGes CLOCk|DATA,
 //! :CURSor:MODE OFF|MAN|TRAC|XY, :CURSor:MANual:TYPE TIME|AMPLitude, :CAX|:CBX|:CAY|:CBY, :AXValue|:AYValue|:BXValue|:BYValue, :XDELta|:IXDelta|:YDELta, :CURSor:MEASure:INDicator,
@@ -1145,6 +1146,19 @@ impl Scpi {
         }
         // measurement, waveform, display, system (need the record / canvas)
         let n0 = nodes.first().copied().unwrap_or("");
+        let (channel, channel_n) = suffix(n0);
+        if kw(channel, "CHANnel") && nodes.len() == 2 && kw(nodes[1], "ZERO") && !query {
+            let Some(c) = channel_n.and_then(|n| n.checked_sub(1)).filter(|&c| c < NCH) else {
+                self.push_err(format!("-113,\"Undefined header\" {}", cmd));
+                return None;
+            };
+            if ui.zero_channel(c) {
+                ui.mark_changed();
+            } else {
+                self.push_err("-230,\"Data corrupt or stale\" channel has no waveform".into());
+            }
+            return None;
+        }
         if kw(n0, "MEASure") && nodes.len() == 2 && query {
             if kw(nodes[1], "ITEM") {
                 return self.meas_item(ui, arg);
@@ -1156,6 +1170,33 @@ impl Scpi {
             if kw(nodes[1], "READout") {
                 return t(&meas_readout(ui));
             }
+        }
+        if kw(n0, "MEASure") && nodes.len() == 3 && kw(nodes[1], "STRip") && kw(nodes[2], "DOCK") {
+            if query {
+                return t(match ui.m.strip_dock {
+                    StripDock::Under => "UNDER",
+                    StripDock::Left => "LEFT",
+                    StripDock::Right => "RIGHT",
+                    StripDock::Above => "ABOVE",
+                });
+            }
+            ui.m.strip_dock = if kw(arg, "UNDer") {
+                StripDock::Under
+            } else if kw(arg, "LEFT") {
+                StripDock::Left
+            } else if kw(arg, "RIGHt") {
+                StripDock::Right
+            } else if kw(arg, "ABOVe") {
+                StripDock::Above
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.mark_changed();
+            return None;
+        }
+        if kw(n0, "MEASure") && nodes.len() >= 2 && kw(nodes[1], "COUNter") {
+            return self.counter_cmd(ui, &nodes[2..], query, arg);
         }
         if kw(n0, "EYE") && nodes.len() == 2 && kw(nodes[1], "ITEM") && query {
             return self.eye_item(ui, arg);
@@ -3206,7 +3247,7 @@ impl Scpi {
                 }
             };
         }
-        if n.len() == 1 && kw(n0, "CURRent") && query {
+        if n.len() == 1 && query && (kw(n0, "CURRent") || kw(n0, "VALue")) {
             return t(&shown(ui.counter_value()));
         }
         if n.len() == 2 && kw(n0, "TOTalize") && kw(n[1], "CLEar") && !query {
@@ -4313,6 +4354,37 @@ mod tests {
         assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:STAT:DISP?;:MEAS:STR?"), "1;VPP,R1,1.000000E+00");
         line(&mut s, &mut ui, &cv, ":MEAS:STAT:RES");
         assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:STAT:ITEM? CNT,VPP,R1"), "0.000000E+00");
+    }
+
+    #[test]
+    fn zero_a_channel_and_place_the_readout() {
+        let (mut s, mut ui, cv) = session();
+        for _ in 0..8 {
+            ui.step(0.05);
+        }
+        let before: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? VAVG,CHAN1").parse().unwrap();
+        assert!(before.is_finite() && before < 1e37, "{before}");
+        line(&mut s, &mut ui, &cv, ":CHAN1:ZERO");
+        let bias: f64 = line(&mut s, &mut ui, &cv, ":CHAN1:BIAS?").parse().unwrap();
+        assert!((bias - before).abs() < 0.05, "bias {bias} mean {before}");
+        for _ in 0..4 {
+            ui.step(0.05);
+        }
+        let after: f64 = line(&mut s, &mut ui, &cv, ":MEAS:ITEM? VAVG,CHAN1").parse().unwrap();
+        assert!(after.abs() < 0.05, "the next record is corrected, {after}");
+
+        line(&mut s, &mut ui, &cv, "*CLS;:MEAS:STR:DOCK LEFT");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:STR:DOCK?"), "LEFT");
+        line(&mut s, &mut ui, &cv, ":MEAS:STR:DOCK ABOVE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:STR:DOCK?"), "ABOVE");
+        line(&mut s, &mut ui, &cv, ":MEAS:STR:DOCK MIDDLE");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224,"));
+        assert_eq!(line(&mut s, &mut ui, &cv, ":MEAS:STR:DOCK?"), "ABOVE");
+
+        line(&mut s, &mut ui, &cv, ":MEAS:COUN:ENAB ON;:MEAS:COUN:SOUR CHAN2");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":COUN:ENAB?;:COUN:SOUR?"), "1;CHAN2");
+        let value: f64 = line(&mut s, &mut ui, &cv, ":MEAS:COUN:VAL?").parse().unwrap();
+        assert!(value.is_finite(), "{value}");
     }
 
     #[test]

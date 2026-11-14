@@ -496,6 +496,12 @@ def validate(oos, result):
         "ABOV;4;DATA",
     )
     result.numeric("burst idle", float(oos.query(":MEASure:BURSt:IDLE?")), 1e-3, relative=1e-6)
+    oos.write(":MEASure:STRip:DOCK LEFT")
+    result.equal("readout dock", oos.query(":MEASure:STRip:DOCK?"), "LEFT")
+    oos.write(":MEASure:STRip:DOCK UNDer")
+    oos.write(":MEASure:COUNter:ENABle ON")
+    oos.write(":MEASure:COUNter:SOURce CHANnel2")
+    result.equal("measure counter", oos.query(":COUNter:ENABle?;:COUNter:SOURce?"), "1;CHAN2")
 
     oos.write(":MEASure:SETup:MIN 20")
     oos.write(":MEASure:SETup:MAX 80")
