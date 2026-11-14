@@ -14,6 +14,7 @@
 //! :TRIGger:TIMeout:SOURce|SLOPe|TIME|LEVel, :TRIGger:RUNT:SOURce|POLarity|WHEN|WUPPer|WLOWer|ALEVel|BLEVel,
 //! :TRIGger:WINDows:SOURce|SLOPe|POSition|TIME|WHEN|ALEVel|BLEVel, :TRIGger:DELay:SA|ASLop|SB|BSLop|TYPE|TUPPer|TLOWer|ALEVel|BLEVel,
 //! :TRIGger:SHOLd:DSRC|CSRC|SLOPe|TYPE|STIMe|HTIMe|DLEVel|CLEVel, :TRIGger:NEDGe:SOURce|SLOPe|IDLE|EDGE|LEVel,
+//! :TRIGger:ZONE<n>:STATe|SOURce|MODE|PLACement|POINts|CLEar,
 //! :TRIGger:SWEep, :TRIGger:HOLDoff, :TRIGger:STATus?,
 //! :ACQuire:SRATe?|MDEPth[?] (AUTO, 1k..125M)|TYPE NORM/PEAK/AVER/HRES|AVERages|ULTRa:MAXFrame,
 //! :MEASure:ITEM[?] <item>[,CHANn|Rn[,src]] (the set form adds a readout row), :MEASure:SOURce, :MEASure:CLEar, :MEASure:INDicator,
@@ -317,6 +318,22 @@ fn parse_ch(s: &str) -> Option<usize> {
     } else {
         None
     }
+}
+
+/// At least `pairs` vertices, each a time and a voltage. A box is exactly two.
+fn point_list(arg: &str, pairs: usize) -> Option<Vec<(f64, f64)>> {
+    let nums: Vec<f64> = arg.split(',').map(str::trim).filter(|s| !s.is_empty()).map(|s| s.parse::<f64>().ok()).collect::<Option<_>>()?;
+    if nums.len() < pairs * 2 || nums.len() % 2 != 0 || nums.iter().any(|n| !n.is_finite()) {
+        return None;
+    }
+    if pairs == 2 && nums.len() != 4 {
+        return None;
+    }
+    Some(nums.chunks(2).map(|c| (c[0], c[1])).collect())
+}
+
+fn point_text(pts: &[(f64, f64)]) -> String {
+    pts.iter().flat_map(|(t, v)| [e(*t), e(*v)]).collect::<Vec<_>>().join(",")
 }
 
 /// Which time a trigger command writes.
@@ -1331,6 +1348,9 @@ impl Scpi {
         }
         if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "NEDGe") {
             return self.trigger_nth(ui, nodes[2], query, arg);
+        }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(suffix(nodes[1]).0, "ZONE") {
+            return self.trigger_zone(ui, suffix(nodes[1]).1, nodes[2], query, arg);
         }
         let (channel, channel_n) = suffix(n0);
         if kw(channel, "CHANnel") && nodes.len() == 2 && kw(nodes[1], "ZERO") && !query {
@@ -2787,6 +2807,98 @@ impl Scpi {
             return self.pair_level(ui, TrigType::NthEdge, true, query, arg);
         }
         self.push_err(format!("-113,\"Undefined header\" :TRIGger:NEDGe:{}", which));
+        None
+    }
+
+    /// Two zones. A box is two corners. A shape is three or more vertices. Rigol has no zone command; these names are Keysight's.
+    fn trigger_zone(&mut self, ui: &mut Ui, index: Option<usize>, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let Some(i) = index.and_then(|n| n.checked_sub(1)).filter(|&i| i < ui.m.zones.len()) else {
+            self.push_err("-224,\"Illegal parameter value\" zone 1 or 2".into());
+            return if query { t("9.9E37") } else { None };
+        };
+        if kw(which, "STATe") {
+            if query {
+                return t(if ui.m.zones[i].on { "1" } else { "0" });
+            }
+            let Some(on) = parse_bool(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.zones[i].on = on;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "SOURce") {
+            if query {
+                return t(&format!("CHAN{}", ui.m.zones[i].src + 1));
+            }
+            let Some(c) = parse_ch(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.zones[i].src = c;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "MODE") {
+            if query {
+                return t(if ui.m.zones[i].inside { "INT" } else { "NOT" });
+            }
+            let inside = if kw(arg, "INTersect") {
+                Some(true)
+            } else if kw(arg, "NOTintersect") {
+                Some(false)
+            } else {
+                None
+            };
+            let Some(inside) = inside else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.zones[i].inside = inside;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "PLACement") {
+            if query {
+                if ui.m.zones[i].pts.len() != 2 {
+                    self.push_err("-221,\"Settings conflict\" zone is not a box".into());
+                    return t("9.9E37");
+                }
+                return t(&point_text(&ui.m.zones[i].pts));
+            }
+            let Some(pts) = point_list(arg, 2) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.zones[i].pts = pts;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "POINts") {
+            if query {
+                if ui.m.zones[i].pts.len() < 2 {
+                    self.push_err("-221,\"Settings conflict\" zone has no outline".into());
+                    return t("9.9E37");
+                }
+                return t(&point_text(&ui.m.zones[i].pts));
+            }
+            let Some(pts) = point_list(arg, 3) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.zones[i].pts = pts;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "CLEar") && !query {
+            let src = ui.m.zones[i].src;
+            ui.m.zones[i] = crate::zone::Zone { src, ..Default::default() };
+            ui.mark_changed();
+            return None;
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:ZONE{}:{}", i + 1, which));
         None
     }
 
@@ -5408,6 +5520,30 @@ mod tests {
         assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:NEDG:EDGE?"), "20");
         line(&mut s, &mut ui, &cv, ":TRIG:MODE EDGE");
         assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?"), "EDGE");
+    }
+
+    #[test]
+    fn a_zone_is_a_box_or_a_shape_on_one_channel() {
+        let (mut s, mut ui, cv) = session();
+        line(&mut s, &mut ui, &cv, ":TRIG:ZONE1:STAT ON;:TRIG:ZONE1:SOUR CHAN2;:TRIG:ZONE1:MODE NOT;:TRIG:ZONE1:PLAC -1E-3,0,1E-3,1");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:ZONE1:STAT?;:TRIG:ZONE1:SOUR?;:TRIG:ZONE1:MODE?"), "1;CHAN2;NOT");
+        let place = line(&mut s, &mut ui, &cv, ":TRIG:ZONE1:PLAC?");
+        let nums: Vec<f64> = place.split(',').map(|s| s.parse().unwrap()).collect();
+        assert_eq!(nums.len(), 4);
+        assert!((nums[0] + 1e-3).abs() < 1e-9 && nums[1].abs() < 1e-9 && (nums[2] - 1e-3).abs() < 1e-9 && (nums[3] - 1.0).abs() < 1e-6, "{place}");
+        line(&mut s, &mut ui, &cv, ":TRIG:ZONE2:POIN -1E-3,0,0,1,1E-3,0");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:ZONE2:STAT?;:TRIG:ZONE2:MODE?"), "0;INT");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:ZONE2:PLAC?"), "9.9E37");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "a shape is not a box");
+        let shape = line(&mut s, &mut ui, &cv, ":TRIG:ZONE2:POIN?");
+        assert_eq!(shape.split(',').count(), 6, "{shape}");
+        line(&mut s, &mut ui, &cv, ":TRIG:ZONE2:CLE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:ZONE2:STAT?;:TRIG:ZONE2:POIN?"), "0;9.9E37");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"));
+        line(&mut s, &mut ui, &cv, ":TRIG:ZONE3:STAT ON");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        line(&mut s, &mut ui, &cv, ":TRIG:ZONE1:CLE");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:ZONE1:STAT?"), "0");
     }
 
     #[test]
