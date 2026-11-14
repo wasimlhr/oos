@@ -12,6 +12,7 @@
 //! - `mask`: mask (pass/fail) test: envelope around a reference waveform, records tested against it
 //! - `expr`: math expressions over the channels
 //! - `math`: arithmetic, integral, derivative, filters, FFT with windows
+//! - `linecode`: FIR and logic traces, NRZI/Manchester/MLT-3 decode, PAM4 levels, run-length UI
 //! - `sim`: signal generators for tests and the demo source (pulse trains with glitches/runts, composite video, ...)
 //!
 //! Waveforms are `&[f32]` volts sampled every `dt` seconds; times inside a waveform are fractional sample indices.
@@ -31,6 +32,7 @@ pub mod expr;
 pub mod eye;
 pub mod identify;
 pub mod interp;
+pub mod linecode;
 pub mod mask;
 pub mod math;
 pub mod measure;

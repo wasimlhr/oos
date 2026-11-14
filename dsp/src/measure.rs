@@ -74,16 +74,26 @@ pub enum Meas {
     Bits,
     /// Unit interval from a 2nd-order PLL clock.
     PllUi,
+    Pam0,
+    Pam1,
+    Pam2,
+    Pam3,
+    /// Smallest gap between adjacent 4-level modes.
+    PamSep,
+    /// Weighted 1/2/3-UI mean of mid spacings.
+    UiWtd,
+    /// RMS after folding onto the estimated UI.
+    FoldRms,
 }
 
-pub const ALL: [Meas; 53] = [
+pub const ALL: [Meas; 60] = [
     Meas::Vmax, Meas::Vmin, Meas::Vpp, Meas::Vtop, Meas::Vbase, Meas::Vamp, Meas::Vupper, Meas::Vmid, Meas::Vlower, Meas::Vavg,
     Meas::Vrms, Meas::VavgCyc, Meas::VrmsCyc, Meas::VrmsAc, Meas::StdDev, Meas::Overshoot, Meas::Preshoot, Meas::Area,
     Meas::AreaCyc, Meas::Period, Meas::Freq, Meas::Rise, Meas::Fall, Meas::PWidth, Meas::NWidth, Meas::PDuty, Meas::NDuty,
     Meas::PPulses, Meas::NPulses, Meas::PEdges, Meas::NEdges, Meas::TVmax, Meas::TVmin, Meas::PSlew, Meas::NSlew,
     Meas::HighTime, Meas::LowTime, Meas::Burst, Meas::Outside, Meas::NPeriods, Meas::CycAmp, Meas::CycTop, Meas::CycBase,
     Meas::CycPp, Meas::CycMax, Meas::CycMin, Meas::EstUi, Meas::Median, Meas::Mode, Meas::LinSlope, Meas::LinInt,
-    Meas::Bits, Meas::PllUi,
+    Meas::Bits, Meas::PllUi, Meas::Pam0, Meas::Pam1, Meas::Pam2, Meas::Pam3, Meas::PamSep, Meas::UiWtd, Meas::FoldRms,
 ];
 
 impl Meas {
@@ -142,6 +152,13 @@ impl Meas {
             Meas::LinInt => "Lin int.",
             Meas::Bits => "Ones",
             Meas::PllUi => "PLL UI",
+            Meas::Pam0 => "L0",
+            Meas::Pam1 => "L1",
+            Meas::Pam2 => "L2",
+            Meas::Pam3 => "L3",
+            Meas::PamSep => "L sep.",
+            Meas::UiWtd => "UI wtd",
+            Meas::FoldRms => "Fold RMS",
         }
     }
     pub fn unit(self) -> &'static str {
@@ -149,7 +166,7 @@ impl Meas {
             Meas::Overshoot | Meas::Preshoot | Meas::PDuty | Meas::NDuty => "%",
             Meas::Area | Meas::AreaCyc => "Vs",
             Meas::Period | Meas::Rise | Meas::Fall | Meas::PWidth | Meas::NWidth | Meas::TVmax | Meas::TVmin | Meas::HighTime
-            | Meas::LowTime | Meas::Burst | Meas::Outside | Meas::NPeriods | Meas::EstUi | Meas::PllUi => "s",
+            | Meas::LowTime | Meas::Burst | Meas::Outside | Meas::NPeriods | Meas::EstUi | Meas::PllUi | Meas::UiWtd => "s",
             Meas::Freq => "Hz",
             Meas::PPulses | Meas::NPulses | Meas::PEdges | Meas::NEdges | Meas::Bits => "",
             Meas::PSlew | Meas::NSlew | Meas::LinSlope => "V/s",
@@ -216,6 +233,9 @@ pub struct Analysis {
     pub lin_int: f64,
     pub bits: f64,
     pub pll_ui: f64,
+    pub pam: [f64; 4],
+    pub ui_wtd: f64,
+    pub fold_rms: f64,
 }
 
 fn mean(v: &[f64]) -> f64 {
@@ -406,6 +426,9 @@ pub fn analyze_refs(v: &[f32], dt: f64, min_amp: f64, lpct: f64, hpct: f64) -> A
         lin_int,
         bits: f.iter().filter(|&&x| x >= 0.5 * (vmin + vmax)).count() as f64,
         pll_ui: f64::NAN,
+        pam: crate::linecode::pam4_levels(&f, vmin, vmax),
+        ui_wtd: f64::NAN,
+        fold_rms: f64::NAN,
         ..Default::default()
     };
     let amp = top - base;
@@ -421,10 +444,14 @@ pub fn analyze_refs(v: &[f32], dt: f64, min_amp: f64, lpct: f64, hpct: f64) -> A
         t.windows(2).map(|w| w[1] - w[0]).collect()
     };
     a.est_ui = crate::eye::unit_interval(&spacings).unwrap_or(f64::NAN);
+    a.ui_wtd = crate::linecode::unit_interval_runs(&spacings).unwrap_or(f64::NAN);
     if a.rises.len() + a.falls.len() <= 8000 {
         let mid_v = (base + amp * 0.5) as f32;
         if let Some(c) = crate::eye::recover_clock_pll(v, dt, mid_v, (amp * 0.1) as f32, None, 0.0, true) {
             a.pll_ui = c.period;
+        }
+        if a.est_ui.is_finite() {
+            a.fold_rms = crate::linecode::fold_rms(v, dt, a.est_ui);
         }
     }
     let lo = (base + lpct * amp) as f32;
@@ -576,6 +603,17 @@ impl Analysis {
             Meas::LinInt => self.lin_int,
             Meas::Bits => self.bits,
             Meas::PllUi => self.pll_ui,
+            Meas::Pam0 => self.pam[0],
+            Meas::Pam1 => self.pam[1],
+            Meas::Pam2 => self.pam[2],
+            Meas::Pam3 => self.pam[3],
+            Meas::PamSep => {
+                if self.pam.iter().any(|level| !level.is_finite()) { return f64::NAN; }
+                let d = [self.pam[1] - self.pam[0], self.pam[2] - self.pam[1], self.pam[3] - self.pam[2]];
+                d.into_iter().filter(|x| x.is_finite() && *x > 0.0).fold(f64::NAN, |a, x| if a.is_nan() { x } else { a.min(x) })
+            }
+            Meas::UiWtd => self.ui_wtd,
+            Meas::FoldRms => self.fold_rms,
         }
     }
 
@@ -878,6 +916,16 @@ mod tests {
         for value in [0.0, 1.0, -0.25, 1e-9] {
             assert_eq!(hist_mode(&[value; 16], value, value), value as f64);
         }
+    }
+
+    #[test]
+    fn pam_separation_requires_all_four_occupied_bands() {
+        for samples in [vec![-1.0, 1.0, -1.0, 1.0], vec![0.25; 16]] {
+            let analysis = analyze(&samples, 1e-9);
+            assert!(analysis.get(Meas::PamSep).is_nan());
+        }
+        let analysis = analyze(&[-1.0, -0.33, 0.33, 1.0], 1e-9);
+        assert!(analysis.get(Meas::PamSep).is_finite());
     }
 
     #[test]

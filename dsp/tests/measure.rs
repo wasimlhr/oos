@@ -142,6 +142,8 @@ fn est_ui_median_mode_and_linreg() {
     assert!(r.get(Meas::LinInt).abs() < 0.05, "{}", r.get(Meas::LinInt));
     assert!(close(r.get(Meas::Median), 4.995, 0.01), "{}", r.get(Meas::Median));
     assert!(a.get(Meas::PllUi).is_finite());
+    assert!(a.get(Meas::UiWtd).is_finite());
+    assert!(a.get(Meas::PamSep).is_finite() || a.get(Meas::Pam0).is_finite());
 }
 
 #[test]
