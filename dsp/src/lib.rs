@@ -12,6 +12,7 @@
 //! - `mask`: mask (pass/fail) test: envelope around a reference waveform, records tested against it
 //! - `expr`: math expressions over the channels
 //! - `math`: arithmetic, integral, derivative, filters, FFT with windows
+//! - `dpt`: wide-bandgap double-pulse timings, recovery and Qoss
 //! - `sim`: signal generators for tests and the demo source (pulse trains with glitches/runts, composite video, ...)
 //!
 //! Waveforms are `&[f32]` volts sampled every `dt` seconds; times inside a waveform are fractional sample indices.
@@ -26,6 +27,7 @@ pub mod decode;
 pub mod decode_ext;
 pub mod decode_ext2;
 pub mod decode_ext3;
+pub mod dpt;
 pub mod edges;
 pub mod expr;
 pub mod eye;
