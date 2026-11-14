@@ -8,6 +8,7 @@
 //! :TIMebase:XY:ENABle|X|Y|Z,
 //! :TRIGger:MODE EDGE|PULSe|SLOPe|VIDeo|PATTern|DURation|TIMeout|RUNT|WINDow|DELay|SETup|NEDGe|RS232|IIC|SPI|CAN|LIN,
 //! :TRIGger:EDGE:SOURce|LEVel|SLOPe, :TRIGger:PULSe:SOURce|POLarity|WHEN|UWIDth|LWIDth|LEVel,
+//! :TRIGger:SLOPe:SOURce|POLarity|WHEN|TUPPer|TLOWer|WINDow|ALEVel|BLEVel,
 //! :TRIGger:SWEep, :TRIGger:HOLDoff, :TRIGger:STATus?,
 //! :ACQuire:SRATe?|MDEPth[?] (AUTO, 1k..125M)|TYPE NORM/PEAK/AVER/HRES|AVERages|ULTRa:MAXFrame,
 //! :MEASure:ITEM[?] <item>[,CHANn|Rn[,src]] (the set form adds a readout row), :MEASure:SOURce, :MEASure:CLEar, :MEASure:INDicator,
@@ -1216,6 +1217,9 @@ impl Scpi {
         if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "PULSe") {
             return self.trigger_pulse(ui, nodes[2], query, arg);
         }
+        if kw(n0, "TRIGger") && nodes.len() == 3 && kw(nodes[1], "SLOPe") {
+            return self.trigger_slope(ui, nodes[2], query, arg);
+        }
         let (channel, channel_n) = suffix(n0);
         if kw(channel, "CHANnel") && nodes.len() == 2 && kw(nodes[1], "ZERO") && !query {
             let Some(c) = channel_n.and_then(|n| n.checked_sub(1)).filter(|&c| c < NCH) else {
@@ -2027,14 +2031,115 @@ impl Scpi {
             return None;
         }
         if kw(which, "UWIDth") || kw(which, "LWIDth") {
-            return self.pulse_width(ui, kw(which, "UWIDth"), query, arg);
+            return self.when_width(ui, kw(which, "UWIDth"), query, arg, TrigType::Pulse);
         }
         self.push_err(format!("-113,\"Undefined header\" :TRIGger:PULSe:{}", which));
         None
     }
 
-    /// Upper (`upper`) or lower pulse limit. Greater uses the lower limit. Less uses the upper limit. Inside and outside use both.
-    fn pulse_width(&mut self, ui: &mut Ui, upper: bool, query: bool, arg: &str) -> Option<Vec<u8>> {
+    /// Slope time between the upper and lower levels. The screen always uses both levels.
+    fn trigger_slope(&mut self, ui: &mut Ui, which: &str, query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        if kw(which, "SOURce") {
+            if query {
+                return t(&format!("CHAN{}", ui.m.trig_src + 1));
+            }
+            let Some(c) = parse_ch(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Slope;
+            ui.m.ch[c].on = true;
+            ui.m.trig_src = c;
+            ui.m.trig_la = None;
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "POLarity") {
+            if query {
+                return t(match ui.m.slope {
+                    Slope::Rise => "POS",
+                    Slope::Fall => "NEG",
+                    Slope::Either => "RFAL",
+                });
+            }
+            ui.m.trig_type = TrigType::Slope;
+            ui.m.slope = if kw(arg, "POSitive") {
+                Slope::Rise
+            } else if kw(arg, "NEGative") {
+                Slope::Fall
+            } else if kw(arg, "RFAL") || kw(arg, "EITHer") {
+                Slope::Either
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "WHEN") {
+            if query {
+                return t(match ui.m.trig_when {
+                    WhenKind::Gt => "GRE",
+                    WhenKind::Lt => "LESS",
+                    WhenKind::In => "GLES",
+                    WhenKind::Out => "OUT",
+                    WhenKind::Off => "OFF",
+                });
+            }
+            ui.m.trig_type = TrigType::Slope;
+            ui.m.trig_when = if kw(arg, "GREater") {
+                WhenKind::Gt
+            } else if kw(arg, "LESS") {
+                WhenKind::Lt
+            } else if kw(arg, "GLESs") {
+                WhenKind::In
+            } else if kw(arg, "OUTside") {
+                WhenKind::Out
+            } else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "WINDow") {
+            if query {
+                return t("TAB");
+            }
+            if kw(arg, "TAB") {
+                return None;
+            }
+            self.push_err("-224,\"Illegal parameter value\" both levels are set".into());
+            return None;
+        }
+        if kw(which, "ALEVel") || kw(which, "BLEVel") {
+            let high = kw(which, "ALEVel");
+            if query {
+                return t(&e(if high { ui.m.trig_level } else { ui.m.trig_level2 } as f64));
+            }
+            let Some(v) = num(arg) else {
+                self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+                return None;
+            };
+            ui.m.trig_type = TrigType::Slope;
+            if high {
+                ui.m.trig_level = v;
+            } else {
+                ui.m.trig_level2 = v;
+            }
+            ui.mark_changed();
+            return None;
+        }
+        if kw(which, "TUPPer") || kw(which, "TLOWer") {
+            return self.when_width(ui, kw(which, "TUPPer"), query, arg, TrigType::Slope);
+        }
+        self.push_err(format!("-113,\"Undefined header\" :TRIGger:SLOPe:{}", which));
+        None
+    }
+
+    /// Upper (`upper`) or lower time limit for a pulse or a slope. Greater uses the lower limit. Less uses the upper limit. Inside and outside use both.
+    fn when_width(&mut self, ui: &mut Ui, upper: bool, query: bool, arg: &str, kind: TrigType) -> Option<Vec<u8>> {
         let t = |s: &str| Some(s.as_bytes().to_vec());
         let uses = match ui.m.trig_when {
             WhenKind::Gt => !upper,
@@ -2058,7 +2163,7 @@ impl Scpi {
             self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
             return None;
         };
-        ui.m.trig_type = TrigType::Pulse;
+        ui.m.trig_type = kind;
         if matches!(ui.m.trig_when, WhenKind::In | WhenKind::Out) {
             if upper {
                 if ui.m.trig_t1 > v {
@@ -4423,7 +4528,25 @@ mod tests {
         line(&mut s, &mut ui, &cv, ":TRIG:PULS:WHEN OUT");
         assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:PULS:WHEN?"), "OUT");
         line(&mut s, &mut ui, &cv, ":TRIG:MODE SLOP");
-        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?"), "SLOP");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?;:TRIG:SLOP:POL?;:TRIG:SLOP:WHEN?;:TRIG:SLOP:SOUR?;:TRIG:SLOP:WIND?"), "SLOP;POS;GRE;CHAN1;TAB");
+        let lower: f64 = line(&mut s, &mut ui, &cv, ":TRIG:SLOP:TLOW?").parse().unwrap();
+        assert!((lower - 1e-6).abs() < 1e-12, "{lower}");
+        line(&mut s, &mut ui, &cv, ":TRIG:SLOP:TUPP 3e-6");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-221"), "greater-than uses the lower time");
+        assert!((ui.m.trig_level - 2.0).abs() < 1e-6 && (ui.m.trig_level2 - 0.5).abs() < 1e-6);
+        line(&mut s, &mut ui, &cv, ":TRIG:SLOP:WIND TA");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        line(&mut s, &mut ui, &cv, ":TRIG:SLOP:WHEN GLES;:TRIG:SLOP:TLOW 2e-6;:TRIG:SLOP:TUPP 8e-6;:TRIG:SLOP:POL NEG;:TRIG:SLOP:SOUR CHAN2;:TRIG:SLOP:ALEV 1.5;:TRIG:SLOP:BLEV 0.4");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:SLOP:WHEN?;:TRIG:SLOP:POL?;:TRIG:SLOP:SOUR?"), "GLES;NEG;CHAN2");
+        let (lo, hi): (f64, f64) = {
+            let both = line(&mut s, &mut ui, &cv, ":TRIG:SLOP:TLOW?;:TRIG:SLOP:TUPP?");
+            let mut parts = both.split(';');
+            (parts.next().unwrap().parse().unwrap(), parts.next().unwrap().parse().unwrap())
+        };
+        assert!((lo - 2e-6).abs() < 1e-12 && (hi - 8e-6).abs() < 1e-12, "{lo} {hi}");
+        assert!((ui.m.trig_level - 1.5).abs() < 1e-6 && (ui.m.trig_level2 - 0.4).abs() < 1e-6);
+        line(&mut s, &mut ui, &cv, ":TRIG:SLOP:POL RFAL");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:SLOP:POL?"), "RFAL");
         line(&mut s, &mut ui, &cv, ":TRIG:MODE EDGE");
         assert_eq!(line(&mut s, &mut ui, &cv, ":TRIG:MODE?"), "EDGE");
     }
