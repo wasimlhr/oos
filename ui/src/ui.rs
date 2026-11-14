@@ -4492,11 +4492,37 @@ impl Ui {
         g
     }
 
+    /// How many stored frames can be shown. Frame 1 is the oldest.
+    pub(crate) fn history_len(&self) -> usize {
+        self.history.len()
+    }
+
+    /// The frame on screen, 1-based. Live is the newest stored frame.
+    pub(crate) fn history_frame(&self) -> usize {
+        self.hist_pos.map(|i| i + 1).unwrap_or(self.history.len())
+    }
+
+    /// Shows frame `frame` (1-based) and stops. Frame 1 is the oldest.
+    pub(crate) fn history_show(&mut self, frame: usize) -> bool {
+        let n = self.history.len();
+        if frame == 0 || frame > n {
+            return false;
+        }
+        self.m.run = RunState::Stop;
+        let i = frame - 1;
+        self.hist_pos = Some(i);
+        self.last[0] = Some(self.history[i].clone());
+        self.measure_last();
+        self.toast(&format!("History {}/{}", frame, n));
+        true
+    }
+
     /// Shows record `hist_pos + d` of the history (d = 0: the newest), stopping the acquisition.
-    fn history_step(&mut self, d: i32) {
+    pub(crate) fn history_step(&mut self, d: i32) -> bool {
         let n = self.history.len();
         if n == 0 {
-            return self.toast("History empty");
+            self.toast("History empty");
+            return false;
         }
         self.m.run = RunState::Stop;
         let cur = self.hist_pos.unwrap_or(n - 1) as i32;
@@ -4505,6 +4531,7 @@ impl Ui {
         self.last[0] = Some(self.history[i].clone());
         self.measure_last();
         self.toast(&format!("History {}/{}", i + 1, n));
+        true
     }
 
     /// Recomputes the measurements of the record shown, and of every loaded ref.
@@ -7115,8 +7142,12 @@ impl Ui {
             key::REF => self.toggle_menu(MenuId::Ref),
             key::ANALYSE => self.toggle_menu(MenuId::Decode),
             // history: back / forward step through the stored records (stops the acquisition), play-stop = live
-            0x08 => self.history_step(-1),
-            0x06 => self.history_step(1),
+            0x08 => {
+                self.history_step(-1);
+            }
+            0x06 => {
+                self.history_step(1);
+            }
             0x07 | key::NAVIGATE => {
                 if self.hist_pos.is_some() {
                     self.hist_pos = None;

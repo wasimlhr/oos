@@ -16,6 +16,7 @@
 //! :TRIGger:SHOLd:DSRC|CSRC|SLOPe|TYPE|STIMe|HTIMe|DLEVel|CLEVel, :TRIGger:NEDGe:SOURce|SLOPe|IDLE|EDGE|LEVel,
 //! :TRIGger:ZONE<n>:STATe|SOURce|MODE|PLACement|POINts|CLEar,
 //! :SEARch:STATe|COUNt?|MODE|EVENt|VALue?,
+//! :RECord:CURRent|:WREPlay:FCURrent|:WREPlay:FMAX?, :NAVigate:FRAMe:NEXT|BACK|STARt|END,
 //! :TRIGger:SWEep, :TRIGger:HOLDoff, :TRIGger:STATus?,
 //! :ACQuire:SRATe?|MDEPth[?] (AUTO, 1k..125M)|TYPE NORM/PEAK/AVER/HRES|AVERages|ULTRa:MAXFrame,
 //! :MEASure:ITEM[?] <item>[,CHANn|Rn[,src]] (the set form adds a readout row), :MEASure:SOURce, :MEASure:CLEar, :MEASure:INDicator,
@@ -1394,6 +1395,12 @@ impl Scpi {
         }
         if kw(n0, "SEARch") {
             return self.search_cmd(ui, &nodes[1..], query, arg);
+        }
+        if kw(n0, "RECord") {
+            return self.record_cmd(ui, &nodes[1..], query, arg);
+        }
+        if kw(n0, "NAVigate") {
+            return self.navigate_cmd(ui, &nodes[1..], query, arg);
         }
         let (channel, channel_n) = suffix(n0);
         if kw(channel, "CHANnel") && nodes.len() == 2 && kw(nodes[1], "ZERO") && !query {
@@ -2835,6 +2842,75 @@ impl Scpi {
             return self.pair_level(ui, TrigType::NthEdge, true, query, arg);
         }
         self.push_err(format!("-113,\"Undefined header\" :TRIGger:NEDGe:{}", which));
+        None
+    }
+
+    /// The stored frames. Frame 1 is the oldest. Live reports the newest.
+    fn record_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        let t = |s: &str| Some(s.as_bytes().to_vec());
+        let current = n.len() == 1 && kw(n[0], "CURRent") || n.len() == 2 && kw(n[0], "WREPlay") && kw(n[1], "FCURrent");
+        if current {
+            if query {
+                return t(&ui.history_frame().to_string());
+            }
+            return self.show_frame(ui, arg);
+        }
+        if n.len() == 2 && kw(n[0], "WREPlay") && kw(n[1], "FMAX") && query {
+            return t(&ui.history_len().to_string());
+        }
+        self.push_err(format!("-113,\"Undefined header\" :RECord:{}", n.join(":")));
+        None
+    }
+
+    /// Older, newer, the first frame, and the last frame.
+    fn navigate_cmd(&mut self, ui: &mut Ui, n: &[&str], query: bool, arg: &str) -> Option<Vec<u8>> {
+        if query || n.len() != 2 || !kw(n[0], "FRAMe") {
+            self.push_err(format!("-113,\"Undefined header\" :NAVigate:{}", n.join(":")));
+            return None;
+        }
+        let _ = arg;
+        let step = if kw(n[1], "NEXT") {
+            Some(1)
+        } else if kw(n[1], "BACK") {
+            Some(-1)
+        } else if kw(n[1], "STARt") {
+            Some(0)
+        } else if kw(n[1], "END") {
+            Some(0)
+        } else {
+            None
+        };
+        let Some(step) = step else {
+            self.push_err(format!("-113,\"Undefined header\" :NAVigate:FRAMe:{}", n[1]));
+            return None;
+        };
+        if ui.history_len() == 0 {
+            self.push_err("-221,\"Settings conflict\" history empty".into());
+            return None;
+        }
+        if kw(n[1], "STARt") {
+            ui.history_show(1);
+        } else if kw(n[1], "END") {
+            ui.history_show(ui.history_len());
+        } else {
+            ui.history_step(step);
+        }
+        ui.mark_changed();
+        None
+    }
+
+    fn show_frame(&mut self, ui: &mut Ui, arg: &str) -> Option<Vec<u8>> {
+        let n = ui.history_len();
+        if n == 0 {
+            self.push_err("-221,\"Settings conflict\" history empty".into());
+            return None;
+        }
+        let Some(frame) = arg.trim().parse::<usize>().ok().filter(|&k| (1..=n).contains(&k)) else {
+            self.push_err(format!("-224,\"Illegal parameter value\" {}", arg));
+            return None;
+        };
+        ui.history_show(frame);
+        ui.mark_changed();
         None
     }
 
@@ -5671,6 +5747,31 @@ mod tests {
         assert_eq!(line(&mut s, &mut ui, &cv, ":SEAR:EVEN?"), "1");
         line(&mut s, &mut ui, &cv, ":SEAR:STAT OFF");
         assert_eq!(line(&mut s, &mut ui, &cv, ":SEAR:COUN?"), "0");
+    }
+
+    #[test]
+    fn history_frames_step_from_the_oldest_to_the_newest() {
+        let (mut s, mut ui, cv) = session();
+        for _ in 0..8 {
+            if ui.history_len() >= 2 {
+                break;
+            }
+            ui.step(0.05);
+        }
+        let n = ui.history_len();
+        assert!(n >= 2, "{n}");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":REC:WREP:FMAX?;:REC:CURR?"), format!("{n};{n}"));
+        line(&mut s, &mut ui, &cv, ":NAV:FRAM:BACK");
+        assert_eq!(ui.m.run, RunState::Stop);
+        assert_eq!(line(&mut s, &mut ui, &cv, ":REC:CURR?"), (n - 1).to_string());
+        line(&mut s, &mut ui, &cv, ":REC:CURR 1");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":REC:WREP:FCUR?"), "1");
+        line(&mut s, &mut ui, &cv, ":NAV:FRAM:NEXT");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":REC:CURR?"), "2");
+        line(&mut s, &mut ui, &cv, ":NAV:FRAM:STAR;:NAV:FRAM:END");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":REC:CURR?"), n.to_string());
+        line(&mut s, &mut ui, &cv, ":REC:CURR 0");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
     }
 
     #[test]
