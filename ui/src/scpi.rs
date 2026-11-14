@@ -42,7 +42,7 @@
 //! :SIM:SSC:MODE OFF|DOWN|CENTER, :SIM:SSC:DEViation <fraction>, :SIM:SSC:FREQuency <Hz>,
 //! :SIM:JITTer:DCD <seconds pp>|:CORRelated <seconds RMS>|:CORNer <Hz>, :SIM:PATTern PRBS7..31.
 //! SIM configuration is applied together on the next :SIM:PLAY ON. :SIM:BUSY? reports background generation.
-//! :LA:STATe, :LA:DIGital<n>:DISPlay, :LA:POD<n>:THReshold, :LA:POINts?, :LA:PREamble?, :LA:DATA? (u16 LE words),
+//! :LA:STATe, :LA:DIGital<n>:DISPlay, :LA:POD<n>:THReshold, :LA:SIZE SMALl|MEDium|LARGe, :LA:POINts?, :LA:PREamble?, :LA:DATA? (u16 LE words),
 //! :SYSTem:ERRor?, OOS: :VIEW SCOPe|SPECtrum|EYE|POWer|BODE|MAGnetic|INVerter|DPT, :IDENtify?, :CALibrate:STARt 0..4[,ZERO] / :STATus? /
 //! :CANCel, :BODE:RUN ON|OFF / :DATA? / :GENerator "ip:port",
 //! built-in generator: :SOURce[1]:OUTPut[:STATe] ON|OFF, :FUNCtion SINusoid|SQUare|RAMP|PULSe|NOISe|DC|ARB, :ARB:DATA, :ARB:CAPTure, :FUNCtion:SQUare:DUTY, :FUNCtion:RAMP:SYMMetry, :MOD[:STATe], :MOD:TYPe AM|FM|PM, :MOD:AM:DEPTh,
@@ -4948,6 +4948,21 @@ impl Scpi {
             }
             return Some(block(&r.words.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>()));
         }
+        if n.len() == 1 && kw(n[0], "SIZE") {
+            const SIZES: [&str; 3] = ["SMAL", "MED", "LARG"];
+            const NAMES: [&str; 3] = ["SMALl", "MEDium", "LARGe"];
+            if query {
+                return t(SIZES[ui.m.la.height.min(SIZES.len() - 1)].into());
+            }
+            match NAMES.iter().position(|name| kw(arg.trim(), name)) {
+                Some(i) => {
+                    ui.m.la.height = i;
+                    ui.mark_changed();
+                    return None;
+                }
+                None => return bad(&mut self.err),
+            }
+        }
         self.push_err(format!("-113,\"Undefined header\" :LA:{}", n.join(":")));
         None
     }
@@ -5772,6 +5787,19 @@ mod tests {
         assert_eq!(line(&mut s, &mut ui, &cv, ":REC:CURR?"), n.to_string());
         line(&mut s, &mut ui, &cv, ":REC:CURR 0");
         assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+    }
+
+    #[test]
+    fn logic_lane_height_uses_the_screen_sizes() {
+        let (mut s, mut ui, cv) = session();
+        assert_eq!(line(&mut s, &mut ui, &cv, ":LA:SIZE?"), "MED");
+        line(&mut s, &mut ui, &cv, ":LA:SIZE SMALl");
+        assert_eq!((ui.m.la.height, line(&mut s, &mut ui, &cv, ":LA:SIZE?")), (0, "SMAL".into()));
+        line(&mut s, &mut ui, &cv, ":LA:SIZE LARG");
+        assert_eq!(line(&mut s, &mut ui, &cv, ":LA:SIZE?"), "LARG");
+        line(&mut s, &mut ui, &cv, ":LA:SIZE HUGE");
+        assert!(line(&mut s, &mut ui, &cv, ":SYST:ERR?").starts_with("-224"));
+        assert_eq!(ui.m.la.height, 2);
     }
 
     #[test]

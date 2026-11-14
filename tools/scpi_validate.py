@@ -413,6 +413,12 @@ def validate(oos, result):
     frames = int(oos.query(":RECord:WREPlay:FMAX?"))
     current = int(oos.query(":RECord:CURRent?"))
     result.equal("history frame", str(current == 0 if frames == 0 else 1 <= current <= frames), "True")
+    lane = oos.query(":LA:SIZE?")
+    if not lane.startswith("-241"):
+        result.equal("lane height", str(lane in ("SMAL", "MED", "LARG")), "True")
+        oos.write(":LA:SIZE SMALl")
+        result.equal("lane height set", oos.query(":LA:SIZE?"), "SMAL")
+        oos.write(f":LA:SIZE {lane}")
     oos.write(":TRIGger:MODE EDGE")
     oos.write(":TRIGger:EDGE:SOURce CHANnel1")
     oos.write(":TRIGger:EDGE:SLOPe NEG")
