@@ -5,7 +5,7 @@
 //! *IDN? *RST *OPC? *CLS, :RUN :STOP :SINGle :AUToscale :CLEar,
 //! :CHANnel<n>:DISPlay|SCALe|OFFSet|COUPling|BWLimit|PROBe|INVert, :TIMebase[:MAIN]:SCALe|OFFSet,
 //! :TRIGger:MODE? :TRIGger:EDGE:SOURce|LEVel|SLOPe, :TRIGger:COUPling DC|AC|LFR|HFR, :TRIGger:SWEep, :TRIGger:HOLDoff, :TRIGger:STATus?, :ACQuire:SRATe?|MDEPth[?] (AUTO, 1k..125M),
-//! :MEASure:ITEM? <item>[,CHANn], :WAVeform:SOURce|MODE NORM/RAW|FORMat|DATA?|PREamble?|POINts?, :DISPlay:DATA? (BMP),
+//! :MEASure:ITEM? <item>[,CHANn] (see MEAS_ITEMS), :WAVeform:SOURce|MODE NORM/RAW|FORMat|DATA?|PREamble?|POINts?, :DISPlay:DATA? (BMP),
 //! :LA:STATe, :LA:DIGital<n>:DISPlay, :LA:POD<n>:THReshold, :LA:POINts?, :LA:PREamble?, :LA:DATA? (u16 LE words),
 //! :COUNter:ENABle|SOURce|MODE FREQuency|PERiod|TOTalize|NDIGits 3..6, :COUNter:CURRent?, :COUNter:TOTalize:CLEar,
 //! :SYSTem:ERRor?, :SYSTem:STATe?, :SYSTem:GRAPhics CPU|GPU, OOS: :VIEW SCOPe|SPECtrum|EYE|POWer|BODE, :DISPlay:VIEW <n>, :DISPlay:VIEW:COUNt 1..4, :IDENtify?, :CALibrate:STARt 0..4[,ZERO] / :STATus? /
@@ -91,6 +91,63 @@ fn parse_ch(s: &str) -> Option<usize> {
         None
     }
 }
+
+/// Items `:MEASure:ITEM?` answers: the SCPI keyword (long form, capitals are the short form) and the measurement.
+const MEAS_ITEMS: &[(&str, Meas)] = &[
+    ("VPP", Meas::Vpp),
+    ("VMAX", Meas::Vmax),
+    ("VMIN", Meas::Vmin),
+    ("VAVG", Meas::Vavg),
+    ("VRMS", Meas::Vrms),
+    ("VAMP", Meas::Vamp),
+    ("FREQuency", Meas::Freq),
+    ("PERiod", Meas::Period),
+    ("RTIMe", Meas::Rise),
+    ("FTIMe", Meas::Fall),
+    ("PWIDth", Meas::PWidth),
+    ("PDUTy", Meas::PDuty),
+    ("NDUTy", Meas::NDuty),
+    ("NWIDth", Meas::NWidth),
+    ("VTOP", Meas::Vtop),
+    ("VBASe", Meas::Vbase),
+    ("OVERshoot", Meas::Overshoot),
+    ("PREShoot", Meas::Preshoot),
+    ("HTIMe", Meas::HighTime),
+    ("LTIMe", Meas::LowTime),
+    ("BWIDth", Meas::Burst),
+    ("TOUTside", Meas::Outside),
+    ("NPERiods", Meas::NPeriods),
+    ("CAMP", Meas::CycAmp),
+    ("CTOP", Meas::CycTop),
+    ("CBASe", Meas::CycBase),
+    ("CPP", Meas::CycPp),
+    ("CMAX", Meas::CycMax),
+    ("CMIN", Meas::CycMin),
+    ("VUPPer", Meas::Vupper),
+    ("VMID", Meas::Vmid),
+    ("VLOWer", Meas::Vlower),
+    ("CAVG", Meas::VavgCyc),
+    ("CRMS", Meas::VrmsCyc),
+    ("ACRms", Meas::VrmsAc),
+    ("SDEViation", Meas::StdDev),
+    ("AREA", Meas::Area),
+    ("CARea", Meas::AreaCyc),
+    ("PPULses", Meas::PPulses),
+    ("NPULses", Meas::NPulses),
+    ("PEDGes", Meas::PEdges),
+    ("NEDGes", Meas::NEdges),
+    ("TVMAX", Meas::TVmax),
+    ("TVMIN", Meas::TVmin),
+    ("PSLew", Meas::PSlew),
+    ("NSLew", Meas::NSlew),
+    ("ESTUI", Meas::EstUi),
+    ("MEDian", Meas::Median),
+    ("MODE", Meas::Mode),
+    ("LSLO", Meas::LinSlope),
+    ("LINT", Meas::LinInt),
+    ("BITS", Meas::Bits),
+    ("PLLUI", Meas::PllUi),
+];
 
 fn parse_bool(s: &str) -> Option<bool> {
     match s.trim().to_ascii_uppercase().as_str() {
@@ -566,29 +623,9 @@ impl Scpi {
             let mut parts = arg.split(',');
             let item = parts.next().unwrap_or("").trim().to_ascii_uppercase();
             let c = parts.next().and_then(parse_ch).unwrap_or(0);
-            let k = match item.as_str() {
-                "VPP" => Meas::Vpp,
-                "VMAX" => Meas::Vmax,
-                "VMIN" => Meas::Vmin,
-                "VAVG" => Meas::Vavg,
-                "VRMS" => Meas::Vrms,
-                "VAMP" => Meas::Vamp,
-                "FREQ" | "FREQUENCY" => Meas::Freq,
-                "PER" | "PERIOD" => Meas::Period,
-                "RTIM" | "RTIME" => Meas::Rise,
-                "FTIM" | "FTIME" => Meas::Fall,
-                "PWID" | "PWIDTH" => Meas::PWidth,
-                "PDUT" | "PDUTY" => Meas::PDuty,
-                "NDUT" | "NDUTY" => Meas::NDuty,
-                "NWID" | "NWIDTH" => Meas::NWidth,
-                "VTOP" => Meas::Vtop,
-                "VBAS" | "VBASE" => Meas::Vbase,
-                "OVER" | "OVERSHOOT" => Meas::Overshoot,
-                "PRES" | "PRESHOOT" => Meas::Preshoot,
-                _ => {
-                    self.err.push("-224,\"Illegal parameter value\"".into());
-                    return t("9.9E37");
-                }
+            let Some(k) = MEAS_ITEMS.iter().find(|it| kw(&item, it.0)).map(|it| it.1) else {
+                self.err.push("-224,\"Illegal parameter value\"".into());
+                return t("9.9E37");
             };
             let v = ui.meas(c, k);
             return t(&if v.is_finite() { e(v) } else { "9.9E37".into() });
